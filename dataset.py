@@ -7,10 +7,11 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import skimage.io as io
-import torchvision.transforms as transforms
+import torchvision.transforms
 import augmenter
 import config
 from glob import glob
+from transform import ToTensor
 from torch._six import string_classes
 from torch.utils.data.sampler import SubsetRandomSampler 
 from torch.utils.data.dataloader import default_collate
@@ -18,13 +19,11 @@ from torch.utils.data.dataloader import default_collate
 class NucleiDataset(data.Dataset):
     """Class to load official data provided by the organizer
     """
-    def __init__(self, root, with_masks=True, with_names=True, augmenter=None, transform=None, mask_transform=None):
+    def __init__(self, root, with_masks=True, augmenter=None, transform=None):
         self.root = os.path.expanduser(root)
         self.with_masks = with_masks
-        self.with_names = True
         self.augment = augmenter
         self.transform = transform
-        self.mask_transform = mask_transform
 
         self._load_data()
 
@@ -37,21 +36,21 @@ class NucleiDataset(data.Dataset):
 
         if self.with_masks:
             masks = self._load_masks(path)
+            boxes = self._generate_boxes(masks)
+            classes = self._generate_classes(masks)
 
             if self.augment is not None:
-                img, masks = self.augment(img, masks)
+                img, masks, boxes = self.augment(img, masks, boxes)
 
             if self.transform is not None:
                 # copy is required to avoid negative strides
                 # which is not supported by torch.Tensor
                 img = self.transform(img.copy())
+                masks = self.transform(masks.copy())
+                boxes = self.transform(boxes.copy())
+                classes = self.transform(classes.copy())
 
-            if self.mask_transform is not None:
-                masks = self.mask_transform(masks.copy())
-
-            if self.with_names:
-                return img, masks, name
-            return img, masks
+            return img, masks, boxes, classes, name
 
         if self.augment is not None:
             img = self.augment(img)
@@ -59,9 +58,7 @@ class NucleiDataset(data.Dataset):
         if self.transform is not None:
             img = self.transform(img.copy())
 
-        if self.with_names:
-            return img, name
-        return img
+        return img, name
 
 
     def __len__(self):
@@ -83,6 +80,37 @@ class NucleiDataset(data.Dataset):
                 0,-1
         )
         return masks
+
+
+    def _generate_classes(self, masks):
+        # TODO: support multi-class
+        num_masks = masks.shape[-1]
+        return np.array([1]*num_masks)
+
+    def _generate_boxes(self, masks):
+        # TODO: support multi-class
+        num_masks = masks.shape[-1]
+        h, w = masks.shape[0], masks.shape[1]
+        boxes = np.zeros((num_masks,4),dtype=np.int32)
+
+        for i in range(num_masks):
+            m = masks[:,:,i]
+            horizontal_indicies = np.where(np.any(m, axis=0))[0]
+            vertical_indicies = np.where(np.any(m, axis=1))[0]
+            if horizontal_indicies.shape[0]:
+                x1, x2 = horizontal_indicies[[0, -1]]
+                y1, y2 = vertical_indicies[[0, -1]]
+                # To fully contain the mask
+                x1 -= 1 if x1 > 0 else 0
+                y1 -= 1 if y1 > 0 else 0
+                x2 += 1 if x2 < w else 0
+                y2 += 1 if y2 < h else 0
+            else:
+                raise RuntimeError("invalid mask encountered")
+
+            boxes[i] = np.array([x1, y1, x2, y2])
+
+        return boxes
 
 
     def _load_data(self):
@@ -116,8 +144,8 @@ def get_train_loaders(data_dir,
     else:
         validation_ratio = 0.
 
-    general_transforms = transforms.Compose([
-        transforms.ToTensor()
+    general_transforms = torchvision.transforms.Compose([
+        ToTensor()
     ])
 
     augmenters = augmenter.Compose([
@@ -135,7 +163,6 @@ def get_train_loaders(data_dir,
             data_dir,
             with_masks = True,
             transform = general_transforms,
-            mask_transform = general_transforms,
             augmenter = augmenters if augment else None
     )
 
@@ -143,7 +170,6 @@ def get_train_loaders(data_dir,
             validation_dir,
             with_masks = True,
             transform = general_transforms,
-            mask_transform = general_transforms,
             augmenter = augmenters if augment else None
     )
 
@@ -182,8 +208,8 @@ def get_test_loader(data_dir,
         augmenter.FixedResizeAndPad(config.IMAGE_MIN_DIM, config.IMAGE_MAX_DIM, interpolation='linear'),
     ])
 
-    transform = transforms.Compose([
-        transforms.ToTensor()
+    transform = torchvision.transforms.Compose([
+        ToTensor()
     ])
 
     data_loader = data.DataLoader(
@@ -202,17 +228,24 @@ def get_test_loader(data_dir,
 def _collate(batch):
     # Attempts to resize all tensors to a fixed size
     # and calls default_collate.
-    # Assumes height and width of tensors are the same
+    # Assumes height (and width if ndim ==3) of tensors are the same
     # and they only differ in number of channels.
+    elem_type = type(batch[0])
     if torch.is_tensor(batch[0]):
         batch = list(batch)
-        h, w = batch[0].shape[1:]
+        dims = []
+        if len(batch[0].shape) == 3:
+            h, w = batch[0].shape[1:]
+            dims.extend([h,w])
+        elif len(batch[0].shape) == 2:
+            w = batch[0].shape[1]
+            dims.append(w)
         channels = np.array([t.shape[0] for t in batch])
         max_channel = channels.max()
         new_channels = max_channel - channels
         for i in np.where(new_channels > 0)[0]:
             c = int(new_channels[i])
-            size = torch.Size((c,h,w))
+            size = torch.Size([c] + dims)
             batch[i] = torch.cat((batch[i], torch.zeros(size)),0)
 
         return default_collate(batch)

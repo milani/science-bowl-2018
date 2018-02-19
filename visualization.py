@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import colorsys
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 from skimage.measure import find_contours
 plt.ion()
 
@@ -25,13 +25,14 @@ def display_images(images, cols=4, size=14, channel_first=True):
     plt.show()
 
 
-def display_image_masks(image, masks, title="",
+def display_image_masks(image, masks, boxes=None, title="",
                       figsize=(16, 16),  ax=None, channel_first=True):
     """
     Displays image and its masks. Supports channel first types for both
     image and masks.
     image: either [c, w, h] or [w, h, c]
     masks: [num, w, h]
+    boxes: if available, shows boxes [n x 4]
     """
     if isinstance(image,torch.Tensor):
         image = (255*image.numpy()).astype(np.uint8)
@@ -59,6 +60,17 @@ def display_image_masks(image, masks, title="",
     for i in range(N):
         color = colors[i]
 
+        # Bounding Box
+        if boxes is not None:
+            if not np.any(boxes[i]):
+                # Skip this instance, probably lost in image cropping
+                continue
+            x1, y1, x2, y2 = boxes[i]
+            p = Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                    alpha=0.7, linestyle='dashed',
+                    edgecolor=color, facecolor='none')
+            ax.add_patch(p)
+
         # Mask
         mask = masks[i, :, :]
         masked_image = apply_mask(masked_image, mask, color)
@@ -74,7 +86,6 @@ def display_image_masks(image, masks, title="",
             verts = np.fliplr(verts) - 1
             p = Polygon(verts, facecolor="none", edgecolor=color)
             ax.add_patch(p)
-    print(masked_image.shape)
     ax.imshow(masked_image)
     plt.show()
 

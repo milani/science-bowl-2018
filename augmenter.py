@@ -1,8 +1,9 @@
-from imgaug import augmenters as iaa
+from imgaug import BoundingBox, BoundingBoxesOnImage, augmenters as iaa
 from imgaug.augmenters.meta import Augmenter
 from imgaug.parameters import Deterministic
 from math import floor
 import six.moves as sm
+import numpy as np
 
 class Compose(object):
     """Composes several augmenters together.
@@ -17,10 +18,13 @@ class Compose(object):
         self.augmenters = iaa.Sequential(augmenters)
 
 
-    def __call__(self, img, mask=None):
+    def __call__(self, img, mask=None, boxes=None):
         if mask is not None:
             aug_det = self.augmenters.to_deterministic()
-            return aug_det.augment_image(img), aug_det.augment_image(mask)
+            bboxes = BoundingBoxesOnImage([BoundingBox(*box) for box in boxes], img.shape)
+            new_bboxes = aug_det.augment_bounding_boxes([bboxes])[0]
+            boxes = [[box.x1, box.y1, box.x2, box.y2] for box in new_bboxes.bounding_boxes]
+            return aug_det.augment_image(img), aug_det.augment_image(mask), np.array(boxes)
 
         return self.augmenters.augment_image(img)
 
@@ -118,7 +122,7 @@ class FixedResizeAndPad(Augmenter):
             self.pad.bottom = Deterministic(bottom_pad)
             self.pad.left = Deterministic(left_pad)
 
-            scaled = self.scale._augment_keypoints([image], random_state, parents, hooks)
+            scaled = self.scale._augment_keypoints([keypoint], random_state, parents, hooks)
             padded = self.pad._augment_keypoints(scaled, random_state, parents, hooks)
             result += padded
 
