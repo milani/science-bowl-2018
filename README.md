@@ -8,4 +8,4 @@ My reason to join the competition is to learn about instance segmentation. So I 
 
 ## Dataset
 
-Please download data from https://www.kaggle.com/c/data-science-bowl-2018/data and place it in the root of repo at `./data`. If I find time, I will add automatic downloader.
+Please download data from https://www.kaggle.com/c/data-science-bowl-2018/data and place it in the root of repo at `./dataset`. If I find time, I will add automatic downloader.

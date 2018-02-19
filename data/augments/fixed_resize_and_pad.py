@@ -1,37 +1,8 @@
-from imgaug import BoundingBox, BoundingBoxesOnImage, augmenters as iaa
+from imgaug.augmenters import Scale, Pad
 from imgaug.augmenters.meta import Augmenter
 from imgaug.parameters import Deterministic
 from math import floor
 import six.moves as sm
-import numpy as np
-
-class Compose(object):
-    """Composes several augmenters together.
-    Unlike original pytorch implementation, it accepts a second argument (of mask type).
-
-    Args:
-        augmenters: list of imgaug.augmenters to compose.
-
-    """
-    def __init__(self, augmenters):
-        assert type(augmenters) == list, 'augmenters should be of type `list`'
-        self.augmenters = iaa.Sequential(augmenters)
-
-
-    def __call__(self, img, mask=None, boxes=None):
-        if mask is not None:
-            aug_det = self.augmenters.to_deterministic()
-            bboxes = BoundingBoxesOnImage([BoundingBox(*box) for box in boxes], img.shape)
-            new_bboxes = aug_det.augment_bounding_boxes([bboxes])[0]
-            boxes = [[box.x1, box.y1, box.x2, box.y2] for box in new_bboxes.bounding_boxes]
-            return aug_det.augment_image(img), aug_det.augment_image(mask), np.array(boxes)
-
-        return self.augmenters.augment_image(img)
-
-
-def Sometimes(aug):
-    return iaa.Sometimes(0.5, aug)
-
 
 class FixedResizeAndPad(Augmenter):
     """Resizes the image so that the smaller dimension == min_dim
@@ -69,10 +40,10 @@ class FixedResizeAndPad(Augmenter):
         self.min_dim = min_dim
         self.max_dim = max_dim
         # size will be changed later in augmentation
-        self.scale = iaa.Scale(size=0.2, name=name, deterministic=deterministic,
+        self.scale = Scale(size=0.2, name=name, deterministic=deterministic,
                 random_state=random_state, interpolation=interpolation)
         # px will be changed later in augmentation
-        self.pad = iaa.Pad(
+        self.pad = Pad(
                 px=(0,0,0,0),
                 pad_mode=pad_mode,
                 pad_cval=pad_cval,

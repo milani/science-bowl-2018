@@ -1,5 +1,5 @@
 import torchvision.transforms.functional as F
-import torch
+from torch import from_numpy
 
 class ToTensor(object):
     """Converts a ``numpy.ndarray`` to tensor.
@@ -18,4 +18,4 @@ class ToTensor(object):
         if array.ndim == 3:
             return F.to_tensor(array)
         else:
-            return torch.from_numpy(array).float()
+            return from_numpy(array).float()
