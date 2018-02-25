@@ -40,8 +40,8 @@ class FixedResizeAndPad(Augmenter):
         self.min_dim = min_dim
         self.max_dim = max_dim
         # size will be changed later in augmentation
-        self.scale = Scale(size=0.2, name=name, deterministic=deterministic,
-                random_state=random_state, interpolation=interpolation)
+        self.scale = Scale(size={'width':min_dim,'height':min_dim}, name=name, deterministic=deterministic,
+                random_state=random_state)#, interpolation=interpolation)
         # px will be changed later in augmentation
         self.pad = Pad(
                 px=(0,0,0,0),
@@ -66,7 +66,7 @@ class FixedResizeAndPad(Augmenter):
             h, w = image.shape[:2]
             scale, top_pad, right_pad, bottom_pad, left_pad = self._calculate_scale_pad(h, w)
 
-            self.scale.size = Deterministic(scale)
+            self.scale.size = (Deterministic(int(h*scale)),Deterministic(int(w*scale)))
             self.pad.top = Deterministic(top_pad)
             self.pad.right = Deterministic(right_pad)
             self.pad.bottom = Deterministic(bottom_pad)
@@ -87,7 +87,7 @@ class FixedResizeAndPad(Augmenter):
             h, w = keypoint.shape[:2]
             scale, top_pad, right_pad, bottom_pad, left_pad = self._calculate_scale_pad(h, w)
 
-            self.scale.size = Deterministic(scale)
+            self.scale.size = (Deterministic(int(h*scale)),Deterministic(int(w*scale))) #Deterministic(scale)
             self.pad.top = Deterministic(top_pad)
             self.pad.right = Deterministic(right_pad)
             self.pad.bottom = Deterministic(bottom_pad)
