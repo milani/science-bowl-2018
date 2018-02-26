@@ -49,15 +49,15 @@ def box_iou(box1, box2, order='xyxy'):
     N = box1.size(1)
     M = box2.size(1)
 
-    lt = torch.max(box1[:,:,None,:2], box2[:,:,:2])  # [b, N,M,2]
-    rb = torch.min(box1[:,:,None,2:], box2[:,:,2:])  # [b, N,M,2]
+    lt = torch.max(box1[:,:,None,:2], box2[:,None,:,:2])  # [b, N,M,2]
+    rb = torch.min(box1[:,:,None,2:], box2[:,None,:,2:])  # [b, N,M,2]
 
     wh = (rb-lt+1).clamp(min=0)      # [b, N,M,2]
     inter = wh[:,:,:,0] * wh[:,:,:,1]  # [b, N,M]
 
     area1 = (box1[:,:,2]-box1[:,:,0]+1) * (box1[:,:,3]-box1[:,:,1]+1)  # [N,]
     area2 = (box2[:,:,2]-box2[:,:,0]+1) * (box2[:,:,3]-box2[:,:,1]+1)  # [M,]
-    iou = inter / (area1[:,:,None] + area2 - inter)
+    iou = inter / (area1[:,:,None] + area2[:,None,:] - inter)
     return iou
 
 def one_hot_embedding(labels, num_classes):
