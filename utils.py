@@ -49,10 +49,14 @@ def box_iou(box1, box2, order='xyxy'):
     N = box1.size(1)
     M = box2.size(1)
 
-    lt = torch.max(box1[:,:,None,:2], box2[:,None,:,:2])  # [b, N,M,2]
-    rb = torch.min(box1[:,:,None,2:], box2[:,None,:,2:])  # [b, N,M,2]
+    # To avoid memory peak, I do the operations in-place.
 
-    wh = (rb-lt+1).clamp(min=0)      # [b, N,M,2]
+    # right_bottom - left_top + 1
+    wh = torch.min(box1[:,:,None,2:], box2[:,None,:,2:])
+    wh.sub_(torch.max(box1[:,:,None,:2], box2[:,None,:,:2]))
+    wh.add_(1)
+    wh.clamp_(min=0)
+
     inter = wh[:,:,:,0] * wh[:,:,:,1]  # [b, N,M]
     del wh
 
@@ -61,6 +65,7 @@ def box_iou(box1, box2, order='xyxy'):
     union = (area1[:,:,None] + area2[:,None,:] - inter)
     del area1
     del area2
+
     iou = inter / union
     return iou
 
@@ -73,5 +78,5 @@ def one_hot_embedding(labels, num_classes):
       (tensor) encoded labels, sized [N,#classes].
     '''
     y = torch.eye(num_classes)  # [D,D]
-    return y[labels.long()]            # [N,D]
+    return y[labels.long()]     # [N,D]
 
