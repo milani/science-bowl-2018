@@ -49,19 +49,23 @@ def box_iou(box1, box2, order='xyxy'):
     N = box1.size(1)
     M = box2.size(1)
 
-    # To avoid memory peak, I do the operations in-place.
+    # To avoid memory peak, I do some operations in-place
+    # and re-order some others.
 
+    area1 = (box1[:,:,2]-box1[:,:,0]+1) * (box1[:,:,3]-box1[:,:,1]+1)  # [N,]
+    area2 = (box2[:,:,2]-box2[:,:,0]+1) * (box2[:,:,3]-box2[:,:,1]+1)  # [M,]
+
+    box1 = box1[:,:,None,:]
+    box2 = box2[:,None,:,:]
     # right_bottom - left_top + 1
-    wh = torch.min(box1[:,:,None,2:], box2[:,None,:,2:])
-    wh.sub_(torch.max(box1[:,:,None,:2], box2[:,None,:,:2]))
+    wh = torch.min(box1[:,:,:,2:], box2[:,:,:,2:])
+    wh.sub_(torch.max(box1[:,:,:,:2], box2[:,:,:,:2]))
     wh.add_(1)
     wh.clamp_(min=0)
 
     inter = wh[:,:,:,0] * wh[:,:,:,1]  # [b, N,M]
     del wh
 
-    area1 = (box1[:,:,2]-box1[:,:,0]+1) * (box1[:,:,3]-box1[:,:,1]+1)  # [N,]
-    area2 = (box2[:,:,2]-box2[:,:,0]+1) * (box2[:,:,3]-box2[:,:,1]+1)  # [M,]
     union = (area1[:,:,None] + area2[:,None,:] - inter)
     del area1
     del area2
