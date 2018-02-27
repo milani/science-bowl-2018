@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from utils import one_hot_embedding
+from model.utils import one_hot_embedding
 
 class FocalLoss(nn.Module):
     def __init__(self, num_classes=1):

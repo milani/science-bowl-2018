@@ -1,11 +1,10 @@
 import torch
-import pdb
 import math
-from utils import meshgrid, box_iou, change_box_order
+from model.utils import meshgrid, box_iou, change_box_order
 
-class Mapper(object):
+class Anchorizer(object):
     def __init__(self):
-        super(Mapper,self).__init__()
+        super(Anchorizer,self).__init__()
         self.anchor_areas = [8*8, 32*32, 128*128, 512*512]
         self.aspect_ratios = [1/2., 1/1., 2/1.]
         self.scale_ratios = [1., 2., pow(2, 2/3.)]
@@ -46,6 +45,8 @@ class Mapper(object):
     def encode(self, labels, boxes, input_size):
         dtype = boxes.type()
         batch_size = boxes.shape[0]
+        if isinstance(input_size,torch.Size):
+            input_size = tuple(input_size)
         input_size = torch.Tensor(input_size)
         anchor_boxes = self._get_anchor_boxes(input_size).type(dtype)
         anchor_boxes = anchor_boxes.unsqueeze(0).expand(batch_size,*anchor_boxes.shape)
