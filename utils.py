@@ -54,10 +54,14 @@ def box_iou(box1, box2, order='xyxy'):
 
     wh = (rb-lt+1).clamp(min=0)      # [b, N,M,2]
     inter = wh[:,:,:,0] * wh[:,:,:,1]  # [b, N,M]
+    del wh
 
     area1 = (box1[:,:,2]-box1[:,:,0]+1) * (box1[:,:,3]-box1[:,:,1]+1)  # [N,]
     area2 = (box2[:,:,2]-box2[:,:,0]+1) * (box2[:,:,3]-box2[:,:,1]+1)  # [M,]
-    iou = inter / (area1[:,:,None] + area2[:,None,:] - inter)
+    union = (area1[:,:,None] + area2[:,None,:] - inter)
+    del area1
+    del area2
+    iou = inter / union
     return iou
 
 def one_hot_embedding(labels, num_classes):

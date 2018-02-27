@@ -46,7 +46,7 @@ class Mapper(object):
         batch_size = boxes.shape[0]
         input_size = torch.Tensor(input_size)
         anchor_boxes = self._get_anchor_boxes(input_size)
-        anchor_boxes = torch.stack([anchor_boxes]*batch_size)
+        anchor_boxes = anchor_boxes.unsqueeze(0).expand(batch_size,*anchor_boxes.shape)
 
         boxes = change_box_order(boxes, 'xyxy2xywh')
         ious = box_iou(anchor_boxes, boxes, order='xywh')
