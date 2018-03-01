@@ -64,13 +64,16 @@ class Trainer(object):
         return os.path.join(self.log_dir, '%d.npy' % latest)
 
 
-    def fit(self, train_loader, val_loader=None, num_epochs=20):
+    def fit(self, train_loader, val_loader=None, num_epochs=20, lr=None):
         loss_fn = self.loss_fn
         model = self.model
         optimizer = self.optim
         anchorize = self.anchorizer.encode
         batch_size = train_loader.batch_size
         total_size = len(train_loader)*batch_size
+
+        if isinstance(lr, float):
+            optimizer.lr = lr
 
         model.train()
 
