@@ -11,7 +11,6 @@ from torch.autograd import Variable
 class Trainer(object):
     def __init__(self, model, checkpointing=True, log_dir='./checkpoints', lr=1e-4):
         super(Trainer,self).__init__()
-        self.model = model
         self.anchorizer = Anchorizer()
         self.loss_fn = FocalLoss()
         self.optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -21,8 +20,13 @@ class Trainer(object):
         self.epoch = 1
         self.checkpointing = checkpointing
         self.log_dir = log_dir
+
+        if torch.cuda.device_count() > 1:
+            print("Using %d GPUs. You will only benefit if batch_size > 1 and num_workers in data loaders > 2." % torch.cuda.device_count())
+            model = torch.nn.DataParallel(model)
         if self.cuda:
             model.cuda()
+        self.model = model
 
 
     def load_checkpoint(self, path):
