@@ -138,27 +138,31 @@ class Trainer(object):
         samples_seen = 0
         for batch_idx, (imgs, masks, boxes, classes, names) in enumerate(val_loader):
             batch_size = imgs.shape[0]
+            input_size = imgs.shape[2:]
 
             if self.cuda:
                 boxes = boxes.cuda()
                 classes = classes.cuda()
 
-            a_classes, a_boxes = anchorize(classes, boxes, imgs.shape[2:])
+            a_classes, a_boxes = anchorize(classes, boxes, input_size)
 
             if self.cuda:
                 imgs = imgs.cuda()
 
-            imgs = Variable(imgs, requires_grad=False)
-            a_boxes = Variable(a_boxes, requires_grad=False)
-            a_classes = Variable(a_classes, requires_grad=False)
+            imgs = Variable(imgs, volatile=True)
+            a_boxes = Variable(a_boxes, volatile=True)
+            a_classes = Variable(a_classes, volatile=True)
 
             cls_preds, box_preds = model(imgs)
             loss = loss_fn(cls_preds, a_classes, box_preds, a_boxes)
+            avg_loss = (samples_seen * avg_loss + batch_size * loss.data[0]) / (samples_seen + batch_size)
             del a_boxes
             del a_classes
-            metric += self.evaluate_metric(cls_preds, classes, box_preds, boxes, imgs.shape[2:])
+            del imgs
+            del loss
 
-            avg_loss = (samples_seen * avg_loss + batch_size * loss.data[0]) / (samples_seen + batch_size)
+            metric += self.evaluate_metric(cls_preds, classes, box_preds, boxes, input_size)
+
             samples_seen +=  batch_size
 
 
@@ -203,7 +207,7 @@ class Trainer(object):
             if self.cuda:
                 imgs = imgs.cuda()
 
-            imgs = Variable(imgs, requires_grad=False)
+            imgs = Variable(imgs, volatile=True)
             cls_preds, box_preds = model(imgs)
             b_classes, b_boxes = deanchorize(cls_preds.data, box_preds.data, imgs.shape[2:])
             classes.append(b_classes)
@@ -223,7 +227,7 @@ class Trainer(object):
         if self.cuda:
             imgs = imgs.cuda()
 
-        imgs = Variable(imgs, requires_grad=False)
+        imgs = Variable(imgs, volatile=True)
         cls_preds, box_preds = model(imgs)
         classes, boxes = deanchorize(cls_preds.data, box_preds.data, imgs.shape[2:])
         return classes, boxes
