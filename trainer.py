@@ -1,4 +1,7 @@
 import torch
+import pdb
+import os
+from glob import glob
 from tqdm import tqdm
 from model.loss import FocalLoss
 from model.anchors import Anchorizer
@@ -6,7 +9,7 @@ from model.utils import box_iou
 from torch.autograd import Variable
 
 class Trainer(object):
-    def __init__(self, model, lr=1e-4):
+    def __init__(self, model, checkpointing=True, log_dir='./checkpoints', lr=1e-4):
         super(Trainer,self).__init__()
         self.model = model
         self.anchorizer = Anchorizer()
@@ -15,11 +18,53 @@ class Trainer(object):
         self.cuda = torch.cuda.is_available()
         self.loss_fn = FocalLoss()
         self.initial_epoch = 1
+        self.epoch = 1
+        self.checkpointing = checkpointing
+        self.log_dir = log_dir
         if self.cuda:
             model.cuda()
 
 
-    def fit(self, train_loader, val_loader=None, num_epochs=20, initial_epoch=0):
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path)
+        self.initial_epoch = checkpoint['epoch']
+        self.model.load_state_dict(checkpoint['state_dict'])
+        self.optim.load_state_dict(checkpoint['optimizer'])
+
+
+    def save_checkpoint(self, path):
+        checkpoint = {
+                'epoch': self.epoch + 1,
+                'state_dict': self.model.state_dict(),
+                'optimizer': self.optim.state_dict()
+        }
+        torch.save(checkpoint, path)
+
+
+    def checkpoint(self):
+        if self.checkpointing:
+
+            if not os.path.exists(self.log_dir):
+                os.makedirs(self.log_dir)
+
+            path = os.path.join(self.log_dir,'%d.npy' % self.epoch)
+            self.save_checkpoint(path)
+
+
+    def latest_checkpoint(self):
+        if not os.path.exists(self.log_dir):
+            raise RuntimeError('log_dir does not exist')
+
+        paths = glob(os.path.join(self.log_dir,'*.npy'))
+        epochs = []
+        for path in paths:
+            epochs.append(int(path.split('/')[-1].replace('.npy','')))
+        epochs.sort()
+        latest = epochs[-1]
+        return os.path.join(self.log_dir, '%d.npy' % latest)
+
+
+    def fit(self, train_loader, val_loader=None, num_epochs=20):
         loss_fn = self.loss_fn
         model = self.model
         optimizer = self.optim
@@ -51,7 +96,7 @@ class Trainer(object):
                 classes = Variable(classes, requires_grad=False)
 
                 cls_preds, box_preds = model(imgs)
-                
+
                 loss = loss_fn(cls_preds, classes, box_preds, boxes)
                 samples_seen += batch_size
                 optimizer.zero_grad()
@@ -68,6 +113,8 @@ class Trainer(object):
 
             pbar.set_postfix({'loss':avg_loss, 'val_loss':eval_loss})
             pbar.close()
+            self.epoch = epoch
+            self.checkpoint()
 
 
     def evaluate(self, val_loader):
@@ -78,7 +125,7 @@ class Trainer(object):
 
         avg_loss = 0
         samples_seen = 0
-        for batch_idx, (imgs, masks, boxes, classes, _) in enumerate(val_loader):
+        for batch_idx, (imgs, masks, boxes, classes, names) in enumerate(val_loader):
             batch_size = imgs.shape[0]
 
             if self.cuda:
