@@ -11,17 +11,18 @@ DATASET_DIR = './dataset'
 BATCH_SIZE=1
 MAX_SIZE=800
 MIN_SIZE=500
-train_dir = os.path.join(DATASET_DIR,'stage1_train')
-test_dir = os.path.join(DATASET_DIR,'stage1_test')
+NUM_WORKERS=2
+NUM_EPOCHS=20
+LEARNING_RATE=10e-5
 
-train_loader, val_loader = train_validation_loaders(train_dir,min_size=MIN_SIZE,max_size=MAX_SIZE,validation_ratio=0.1,batch_size=BATCH_SIZE,num_workers=2,pin_memory=True, shuffle=False)
-test_loader = test_loader(test_dir,batch_size=BATCH_SIZE)
+train_dir = os.path.join(DATASET_DIR,'stage1_train')
+test_dir = os.path.join(DATASET_DIR,'stage1_train')
+
+train_loader, val_loader = train_validation_loaders(train_dir,min_size=MIN_SIZE,max_size=MAX_SIZE,validation_ratio=0.1,batch_size=BATCH_SIZE,num_workers=NUM_WORKERS,pin_memory=True, shuffle=False)
+test_loader = test_loader(test_dir,min_size=MIN_SIZE,max_size=MAX_SIZE,batch_size=BATCH_SIZE)
 
 model = RetinaNet()
 
 trainer = Trainer(model)
-trainer.fit(train_loader, val_loader, num_epochs=20)
-
-#        if not batch_idx % 50:
-#            print("epoch %03d | batch %03d | loss %.4f | taken %.4f / %.4f" % (epoch+1, batch_idx, train_loss/(batch_idx+1),taken/(batch_idx+1),taken2/(batch_idx+1)))
-
+trainer.load_checkpoint(trainer.latest_checkpoint())
+trainer.fit(train_loader, val_loader, num_epochs=NUM_EPOCHS,lr=LEARNING_RATE)
