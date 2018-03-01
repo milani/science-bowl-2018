@@ -69,6 +69,9 @@ class Trainer(object):
 
 
     def fit(self, train_loader, val_loader=None, num_epochs=20, lr=None):
+        if self.initial_epoch >= num_epochs:
+            print("Already trained for %d epochs. Requested %d." % (self.initial_epoch, num_epochs))
+            return
         loss_fn = self.loss_fn
         model = self.model
         optimizer = self.optim
