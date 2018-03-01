@@ -109,9 +109,9 @@ class Trainer(object):
                 pbar.set_postfix({'loss':avg_loss})
 
             if val_loader is not None:
-                eval_loss = self.evaluate(val_loader)
+                eval_loss, eval_metric = self.evaluate(val_loader)
 
-            pbar.set_postfix({'loss':avg_loss, 'val_loss':eval_loss})
+            pbar.set_postfix({'loss':avg_loss, 'val_loss':eval_loss, 'mAP':eval_metric})
             pbar.close()
             self.epoch = epoch
             self.checkpoint()
@@ -124,6 +124,7 @@ class Trainer(object):
         loss_fn = self.loss_fn
 
         avg_loss = 0
+        metric = 0
         samples_seen = 0
         for batch_idx, (imgs, masks, boxes, classes, names) in enumerate(val_loader):
             batch_size = imgs.shape[0]
@@ -132,34 +133,36 @@ class Trainer(object):
                 boxes = boxes.cuda()
                 classes = classes.cuda()
 
-            classes, boxes = anchorize(classes, boxes, imgs.shape[2:])
+            a_classes, a_boxes = anchorize(classes, boxes, imgs.shape[2:])
 
             if self.cuda:
                 imgs = imgs.cuda()
 
             imgs = Variable(imgs, requires_grad=False)
-            boxes = Variable(boxes, requires_grad=False)
-            classes = Variable(classes, requires_grad=False)
+            a_boxes = Variable(a_boxes, requires_grad=False)
+            a_classes = Variable(a_classes, requires_grad=False)
 
             cls_preds, box_preds = model(imgs)
-            loss = loss_fn(cls_preds, classes, box_preds, boxes)
+            loss = loss_fn(cls_preds, a_classes, box_preds, a_boxes)
+            del a_boxes
+            del a_classes
+            metric += self.evaluate_metric(cls_preds, classes, box_preds, boxes, imgs.shape[2:])
 
-            samples_seen +=  batch_size
             avg_loss = (samples_seen * avg_loss + batch_size * loss.data[0]) / (samples_seen + batch_size)
+            samples_seen +=  batch_size
 
 
         model.train()
-        return avg_loss
+        return avg_loss, metric/samples_seen
 
 
     def evaluate_metric(self,cls_preds, classes, box_preds, boxes, input_size):
         deanchorize = self.anchorizer.decode
         cls_preds, box_preds = deanchorize(cls_preds.data, box_preds.data,input_size)
-        #classes, boxes = deanchorize(classes.data.unsqueeze(2), boxes.data, input_size)
         results = 0
         for b in range(len(cls_preds)):
-            print(type(box_preds[b]))
-            print(type(boxes[b]))
+            if len(cls_preds[b]) == 0:
+                continue
             ious = box_iou(box_preds[b].unsqueeze(0), boxes[b].unsqueeze(0), order='xyxy').squeeze(0)
             num_pred = len(cls_preds[b])
             num_true = classes[b].nonzero().squeeze().shape[0]
@@ -171,7 +174,7 @@ class Trainer(object):
                 fn = num_true - tp
                 p += tp / (tp + fp + fn)
             results += p/5
-        return results/len(cls_preds)
+        return results
 
 
     def predict(self, loader):
