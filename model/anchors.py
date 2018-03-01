@@ -1,6 +1,7 @@
 import torch
+import pdb
 import math
-from model.utils import meshgrid, box_iou, change_box_order
+from model.utils import meshgrid, box_iou, change_box_order, box_nms
 
 class Anchorizer(object):
     def __init__(self):
@@ -64,3 +65,36 @@ class Anchorizer(object):
         ignore = (max_ious>0.4) & (max_ious<0.5)
         cls_targets[ignore] = -1
         return cls_targets, loc_targets
+
+
+    def decode(self, cls_preds, box_preds, input_size):
+        CLS_THRESH = 0.1
+        NMS_THRESH = 0.1
+        dtype = box_preds.type()
+        batch_size = box_preds.shape[0]
+        if isinstance(input_size,torch.Size):
+            input_size = tuple(input_size)
+        input_size = torch.Tensor(input_size)
+        anchor_boxes = self._get_anchor_boxes(input_size).type(dtype)
+        anchor_boxes = anchor_boxes.unsqueeze(0).expand(batch_size,*anchor_boxes.shape)
+
+        box_xy = box_preds[:,:,:2]
+        box_wh = box_preds[:,:,2:]
+        xy = box_xy * anchor_boxes[:,:,2:] + anchor_boxes[:,:,:2]
+        wh = box_wh.exp() * anchor_boxes[:,:,2:]
+        boxes = torch.cat([xy-wh/2, xy+wh/2], 2)
+        score, classes = cls_preds.sigmoid().max(2)
+        box_results = []
+        class_results = []
+        for b in range(batch_size):
+            ids = score[b,:] > CLS_THRESH
+            ids = ids.nonzero().squeeze()
+            if len(ids) == 0:
+                class_results.append([])
+                box_results.append([])
+                continue
+            keep = box_nms(boxes[b][ids], score[b][ids], threshold=0.1).type(dtype).long()
+            box_results.append(boxes[b][ids[keep]])
+            class_results.append(classes[b][ids[keep]])
+
+        return class_results, box_results

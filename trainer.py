@@ -2,6 +2,7 @@ import torch
 from tqdm import tqdm
 from model.loss import FocalLoss
 from model.anchors import Anchorizer
+from model.utils import box_iou
 from torch.autograd import Variable
 
 class Trainer(object):
@@ -13,6 +14,7 @@ class Trainer(object):
         self.optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
         self.cuda = torch.cuda.is_available()
         self.loss_fn = FocalLoss()
+        self.initial_epoch = 1
         if self.cuda:
             model.cuda()
 
@@ -25,12 +27,12 @@ class Trainer(object):
         batch_size = train_loader.batch_size
         total_size = len(train_loader)*batch_size
 
-        avg_loss = 0
-        samples_seen = 0
-
         model.train()
 
-        for epoch in range(initial_epoch, num_epochs):
+        for epoch in range(self.initial_epoch, num_epochs + 1):
+            avg_loss = 0
+            samples_seen = 0
+
             pbar = tqdm(total=total_size, leave=True, unit='batches')
             for batch_idx, (imgs, masks, boxes, classes, _) in enumerate(train_loader):
                 batch_size = imgs.shape[0]
@@ -101,3 +103,67 @@ class Trainer(object):
 
         model.train()
         return avg_loss
+
+
+    def evaluate_metric(self,cls_preds, classes, box_preds, boxes, input_size):
+        deanchorize = self.anchorizer.decode
+        cls_preds, box_preds = deanchorize(cls_preds.data, box_preds.data,input_size)
+        #classes, boxes = deanchorize(classes.data.unsqueeze(2), boxes.data, input_size)
+        results = 0
+        for b in range(len(cls_preds)):
+            print(type(box_preds[b]))
+            print(type(boxes[b]))
+            ious = box_iou(box_preds[b].unsqueeze(0), boxes[b].unsqueeze(0), order='xyxy').squeeze(0)
+            num_pred = len(cls_preds[b])
+            num_true = classes[b].nonzero().squeeze().shape[0]
+            p = 0
+            for t in [0.5,0.6,0.7,0.8,0.9]:
+                matches = (ious > t).nonzero()
+                tp = len(matches)
+                fp = num_pred - tp
+                fn = num_true - tp
+                p += tp / (tp + fp + fn)
+            results += p/5
+        return results/len(cls_preds)
+
+
+    def predict(self, loader):
+        model = self.model
+        model.eval()
+        deanchorize = self.anchorizer.decode
+        batch_size = loader.batch_size
+        total_size = len(loader)*batch_size
+
+        pbar = tqdm(total=total_size, leave=True, unit='batches')
+        classes = []
+        boxes = []
+        for batch_idx, (imgs,_) in enumerate(loader):
+            batch_size = imgs.shape[0]
+
+            if self.cuda:
+                imgs = imgs.cuda()
+
+            imgs = Variable(imgs, requires_grad=False)
+            cls_preds, box_preds = model(imgs)
+            b_classes, b_boxes = deanchorize(cls_preds.data, box_preds.data, imgs.shape[2:])
+            classes.append(b_classes)
+            boxes.append(b_boxes)
+
+            pbar.update(batch_size)
+        pbar.close()
+        return classes, boxes
+
+
+    def predict_on_batch(self, imgs):
+        model = self.model
+        model.eval()
+        deanchorize = self.anchorizer.decode
+        batch_size = imgs.shape[0]
+
+        if self.cuda:
+            imgs = imgs.cuda()
+
+        imgs = Variable(imgs, requires_grad=False)
+        cls_preds, box_preds = model(imgs)
+        classes, boxes = deanchorize(cls_preds.data, box_preds.data, imgs.shape[2:])
+        return classes, boxes
