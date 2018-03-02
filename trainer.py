@@ -1,6 +1,7 @@
 import torch
 import pdb
 import os
+from collections import OrderedDict
 from glob import glob
 from tqdm import tqdm
 from model.loss import FocalLoss
@@ -32,7 +33,19 @@ class Trainer(object):
     def load_checkpoint(self, path):
         checkpoint = torch.load(path)
         self.initial_epoch = checkpoint['epoch']
-        self.model.load_state_dict(checkpoint['state_dict'])
+
+        try:
+            self.model.load_state_dict(checkpoint['state_dict'])
+        except KeyError as e:
+            if isinstance(self.model, torch.nn.DataParallel):
+                self.model.module.load_state_dict(checkpoint['state_dict'])
+            else:
+                new_state_dict = OrderedDict()
+                for k, v in checkpoint['state_dict'].items():
+                    name = k[7:] # remove `module.`
+                    new_state_dict[name] = v
+                self.model.load_state_dict(new_state_dict)
+
         self.optim.load_state_dict(checkpoint['optimizer'])
 
 
