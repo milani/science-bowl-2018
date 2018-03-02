@@ -116,7 +116,7 @@ def _collate(batch):
         for i in np.where(new_channels > 0)[0]:
             c = int(new_channels[i])
             size = torch.Size([c] + dims)
-            batch[i] = torch.cat((batch[i], torch.zeros(size)),0)
+            batch[i] = torch.cat((batch[i], torch.zeros(1).expand(c,*dims)),0)
 
         return default_collate(batch)
     elif isinstance(batch[0], string_classes):
