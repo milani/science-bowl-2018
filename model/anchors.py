@@ -6,10 +6,11 @@ from model.utils import meshgrid, box_iou, change_box_order, box_nms
 class Anchorizer(object):
     def __init__(self):
         super(Anchorizer,self).__init__()
-        self.anchor_areas = [8*8, 32*32, 128*128, 512*512]
+        self.anchor_areas = [4*4, 16*16, 64*64, 128*128]
         self.aspect_ratios = [1/2., 1/1., 2/1.]
-        self.scale_ratios = [1., 2., pow(2, 2/3.)]
+        self.scale_ratios = [1., 2., 3/4.]#pow(2, 2/3.)]
         self.anchor_wh = self._get_anchor_wh()
+        self.num_anchors = len(self.aspect_ratios) * len(self.scale_ratios)
 
 
     def _get_anchor_wh(self):
@@ -27,17 +28,17 @@ class Anchorizer(object):
 
 
     def _get_anchor_boxes(self, input_size):
+        num_anchors = self.num_anchors
         num_fms = len(self.anchor_areas)
         fm_sizes = [(input_size/pow(2.,i+2)).ceil() for i in range(num_fms)]
-
         boxes = []
         for i in range(num_fms):
             fm_size = fm_sizes[i]
             grid_size = input_size / fm_size
             fm_w, fm_h = int(fm_size[0]), int(fm_size[1])
             xy = meshgrid(fm_w, fm_h) + 0.5
-            xy = (xy*grid_size).view(fm_h, fm_w, 1, 2).expand(fm_h, fm_w, 9, 2)
-            wh = self.anchor_wh[i].view(1,1,9,2).expand(fm_h,fm_w,9,2)
+            xy = (xy*grid_size).view(fm_h, fm_w, 1, 2).expand(fm_h, fm_w, num_anchors, 2)
+            wh = self.anchor_wh[i].view(1, 1, num_anchors, 2).expand(fm_h, fm_w, num_anchors, 2)
             box = torch.cat([xy,wh], 3)  # [x,y,w,h]
             boxes.append(box.view(-1,4))
         return torch.cat(boxes, 0)
@@ -68,8 +69,8 @@ class Anchorizer(object):
 
 
     def decode(self, cls_preds, box_preds, input_size):
-        CLS_THRESH = 0.1
-        NMS_THRESH = 0.1
+        CLS_THRESH = 0.2
+        NMS_THRESH = 0.8
         dtype = box_preds.type()
         batch_size = box_preds.shape[0]
         if isinstance(input_size,torch.Size):
@@ -93,7 +94,7 @@ class Anchorizer(object):
                 class_results.append([])
                 box_results.append([])
                 continue
-            keep = box_nms(boxes[b][ids], score[b][ids], threshold=0.1).type(dtype).long()
+            keep = box_nms(boxes[b][ids], score[b][ids], threshold=NMS_THRESH).type(dtype).long()
             box_results.append(boxes[b][ids[keep]])
             class_results.append(classes[b][ids[keep]])
 
