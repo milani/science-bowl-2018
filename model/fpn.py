@@ -19,7 +19,7 @@ class FPN(nn.Module):
         self.lat_c2p2 = nn.Conv2d( 64 * 4, 256, kernel_size=1, stride=1, padding=0)
 
         # between fpn layers
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
+        self.upsample = nn.ConvTranspose2d(256, 256, kernel_size=4, stride=2,padding=1)
 
     def forward(self, x):
         C1, C2, C3, C4, C5 = self.resnet(x)
