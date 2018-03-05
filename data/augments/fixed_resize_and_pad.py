@@ -41,7 +41,7 @@ class FixedResizeAndPad(Augmenter):
         self.max_dim = max_dim
         # size will be changed later in augmentation
         self.scale = Scale(size={'width':min_dim,'height':min_dim}, name=name, deterministic=deterministic,
-                random_state=random_state)#, interpolation=interpolation)
+                random_state=random_state, interpolation=interpolation)
         # px will be changed later in augmentation
         self.pad = Pad(
                 px=(0,0,0,0),
