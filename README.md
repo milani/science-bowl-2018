@@ -9,3 +9,10 @@ My reason to join the competition is to learn about instance segmentation. So I 
 ## Dataset
 
 Please download data from https://www.kaggle.com/c/data-science-bowl-2018/data and place it in the root of repo at `./dataset`. If I find time, I will add automatic downloader.
+
+
+## Required Packages
+
+* torch (0.3.0)
+* tqdm
+* glob
