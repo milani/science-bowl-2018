@@ -10,7 +10,7 @@ from model.utils import box_iou
 from torch.autograd import Variable
 
 class Trainer(object):
-    def __init__(self, model, checkpointing=True, log_dir='./checkpoints', lr=1e-4):
+    def __init__(self, model, checkpointing=True, log_dir='./checkpoints', lr=1e-4, force_single_gpu=False):
         super(Trainer,self).__init__()
         self.anchorizer = Anchorizer()
         self.loss_fn = FocalLoss()
@@ -22,7 +22,7 @@ class Trainer(object):
         self.checkpointing = checkpointing
         self.log_dir = log_dir
 
-        if torch.cuda.device_count() > 1:
+        if not force_single_gpu and torch.cuda.device_count() > 1:
             print("Using %d GPUs. You will only benefit if batch_size > 1 and num_workers in data loaders > 2." % torch.cuda.device_count())
             model = torch.nn.DataParallel(model)
         if self.cuda:
