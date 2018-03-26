@@ -1,12 +1,15 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from model.utils import one_hot_embedding
 
+
 class FocalLoss(nn.Module):
     def __init__(self, num_classes=1):
         super(FocalLoss, self).__init__()
         self.num_classes = num_classes
+        self.include_mask = True
 
 
     def focal_loss(self, x,y):
@@ -25,7 +28,7 @@ class FocalLoss(nn.Module):
         return res
 
 
-    def forward(self, cls_preds, cls_targets, box_preds, box_targets):
+    def forward(self, cls_preds, cls_targets, box_preds, box_targets, mask_preds, mask_targets):
         """ Compute focal loss for boxes and targets
         """
         batch_size, num_boxes = cls_targets.size()
@@ -42,6 +45,12 @@ class FocalLoss(nn.Module):
         masked_cls_preds = cls_preds[mask].view(-1,self.num_classes)
         cls_loss = self.focal_loss(masked_cls_preds, cls_targets[pos_neg])
 
-        loss = (box_loss+cls_loss)/num_pos
-        return loss
+        mask_loss = Variable(box_loss.data.new(1).fill_(0))
+        if self.include_mask:
+            pad_size = mask_preds.shape[1] - mask_targets.shape[1]
+            mask_targets = F.pad(mask_targets, (0,0,0,0,0,pad_size))
+            mask_loss = F.binary_cross_entropy_with_logits(mask_preds, mask_targets, size_average=False).clamp(max=100)
+
+        avg_loss = (box_loss + cls_loss + mask_loss)/num_pos
+        return cls_loss, box_loss, mask_loss, avg_loss
 

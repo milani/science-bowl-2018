@@ -1,22 +1,19 @@
 import torch
+import torch.nn.functional as F
 import pdb
 import os
 from collections import OrderedDict
 from glob import glob
 from tqdm import tqdm
-from model.loss import FocalLoss
-from model.anchors import Anchorizer
 from model.utils import box_iou
 from torch.autograd import Variable
 
 class Trainer(object):
     def __init__(self, model, checkpointing=True, log_dir='./checkpoints', lr=1e-4, force_single_gpu=False):
         super(Trainer,self).__init__()
-        self.anchorizer = Anchorizer()
-        self.loss_fn = FocalLoss()
-        self.optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+        params = filter(lambda x: x.requires_grad, model.parameters())
+        self.optim = torch.optim.Adam(params, lr=lr, weight_decay=1e-4)
         self.cuda = torch.cuda.is_available()
-        self.loss_fn = FocalLoss()
         self.initial_epoch = 1
         self.epoch = 1
         self.checkpointing = checkpointing
@@ -85,10 +82,8 @@ class Trainer(object):
         if self.initial_epoch >= num_epochs:
             print("Already trained for %d epochs. Requested %d." % (self.initial_epoch, num_epochs))
             return
-        loss_fn = self.loss_fn
         model = self.model
         optimizer = self.optim
-        anchorize = self.anchorizer.encode
         batch_size = train_loader.batch_size
         total_size = len(train_loader)*batch_size
 
@@ -99,6 +94,10 @@ class Trainer(object):
 
         for epoch in range(self.initial_epoch, num_epochs + 1):
             avg_loss = 0
+            avg_cls_loss = 0
+            avg_box_loss = 0
+            avg_mask_loss = 0
+
             samples_seen = 0
 
             pbar = tqdm(total=total_size, leave=True, unit='batches')
@@ -106,30 +105,30 @@ class Trainer(object):
                 batch_size = imgs.shape[0]
 
                 if self.cuda:
+                    imgs = imgs.cuda()
+                    masks = masks.cuda()
                     boxes = boxes.cuda()
                     classes = classes.cuda()
 
-                classes, boxes = anchorize(classes, boxes, imgs.shape[2:])
-
-                if self.cuda:
-                    imgs = imgs.cuda()
-
                 imgs = Variable(imgs)
-                boxes = Variable(boxes, requires_grad=False)
                 classes = Variable(classes, requires_grad=False)
+                boxes = Variable(boxes, requires_grad=False)
+                masks = Variable(masks, requires_grad=False)
 
-                cls_preds, box_preds = model(imgs)
+                _, _, _, cls_loss, box_loss, mask_loss, total_loss = model(imgs, classes, boxes, masks)
 
-                loss = loss_fn(cls_preds, classes, box_preds, boxes)
                 samples_seen += batch_size
                 optimizer.zero_grad()
-                loss.backward()
+                total_loss.mean().backward()
                 optimizer.step()
 
-                avg_loss = (samples_seen * avg_loss + batch_size * loss.data[0]) / (samples_seen + batch_size)
+                avg_loss = (samples_seen * avg_loss + batch_size * total_loss.data[0]) / (samples_seen + batch_size)
+                avg_cls_loss = (samples_seen * avg_cls_loss + batch_size * cls_loss.data[0]) / (samples_seen + batch_size)
+                avg_box_loss = (samples_seen * avg_box_loss + batch_size * box_loss.data[0]) / (samples_seen + batch_size)
+                avg_mask_loss = (samples_seen * avg_mask_loss + batch_size * mask_loss.data[0]) / (samples_seen + batch_size)
                 pbar.update(batch_size)
                 pbar.set_description('Epoch %d/%d' % (epoch, num_epochs))
-                pbar.set_postfix({'loss':avg_loss})
+                pbar.set_postfix({'loss':avg_loss, 'class loss':avg_cls_loss,'box loss':avg_box_loss, 'mask loss':avg_mask_loss})
 
             if val_loader is not None:
                 eval_loss, eval_metric = self.evaluate(val_loader)
@@ -143,8 +142,6 @@ class Trainer(object):
     def evaluate(self, val_loader):
         model = self.model
         model.eval()
-        anchorize = self.anchorizer.encode
-        loss_fn = self.loss_fn
 
         avg_loss = 0
         metric = 0
@@ -154,27 +151,21 @@ class Trainer(object):
             input_size = imgs.shape[2:]
 
             if self.cuda:
+                imgs = imgs.cuda()
+                masks = masks.cuda()
                 boxes = boxes.cuda()
                 classes = classes.cuda()
 
-            a_classes, a_boxes = anchorize(classes, boxes, input_size)
-
-            if self.cuda:
-                imgs = imgs.cuda()
-
             imgs = Variable(imgs, volatile=True)
-            a_boxes = Variable(a_boxes, volatile=True)
-            a_classes = Variable(a_classes, volatile=True)
+            masks = Variable(masks, volatile=True)
+            boxes = Variable(boxes, volatile=True)
+            classes = Variable(classes, volatile=True)
 
-            cls_preds, box_preds = model(imgs)
-            loss = loss_fn(cls_preds, a_classes, box_preds, a_boxes)
-            avg_loss = (samples_seen * avg_loss + batch_size * loss.data[0]) / (samples_seen + batch_size)
-            del a_boxes
-            del a_classes
-            del imgs
-            del loss
+            returns = model(imgs, classes, boxes, masks)
+            cls_proposals, box_proposals, mask_preds, cls_loss, box_loss, mask_loss, total_loss = returns
+            avg_loss = (samples_seen * avg_loss + batch_size * total_loss.data[0]) / (samples_seen + batch_size)
 
-            metric += self.evaluate_metric(cls_preds, classes, box_preds, boxes, input_size)
+            metric += self.evaluate_metric(cls_proposals, classes, box_proposals, boxes, input_size)
 
             samples_seen +=  batch_size
 
@@ -183,37 +174,33 @@ class Trainer(object):
         return avg_loss, metric/samples_seen
 
 
-    def evaluate_metric(self,cls_preds, classes, box_preds, boxes, input_size):
-        deanchorize = self.anchorizer.decode
-        cls_preds, box_preds = deanchorize(cls_preds.data, box_preds.data,input_size)
-        results = 0
-        for b in range(len(cls_preds)):
-            if len(cls_preds[b]) == 0:
-                continue
-            ious = box_iou(box_preds[b].unsqueeze(0), boxes[b].unsqueeze(0), order='xyxy').squeeze(0)
-            num_pred = len(cls_preds[b])
-            num_true = classes[b].nonzero().squeeze().shape[0]
-            p = 0
-            for t in [0.5,0.6,0.7,0.8,0.9]:
-                matches = (ious > t).nonzero()
-                tp = len(matches)
-                fp = num_pred - tp
-                fn = num_true - tp
-                p += tp / (tp + fp + fn)
-            results += p/5
-        return results
+    def evaluate_metric(self, cls_preds, classes, box_preds, boxes, input_size):
+        ious = box_iou(box_preds.data, boxes.data, order='xyxy')
+        num_pred = (cls_preds.data > 0).sum(dim=1).float()
+        num_true = (classes.data > 0).sum(dim=1).float()
+        p = 0
+        thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+        # in case of multiple detection for the same object, one detection is considered
+        # as true positive, the others are false detections.
+        for t in thresholds:
+            tp = (ious > t).sum(dim=1).clamp(max=1).sum(dim=1).float()
+            fp = num_pred - tp
+            fn = num_true - tp
+            p += tp / (tp + fp + fn)
+
+        return p.sum() / len(thresholds)
 
 
     def predict(self, loader):
         model = self.model
-        model.eval()
-        deanchorize = self.anchorizer.decode
+        model.predict()
         batch_size = loader.batch_size
         total_size = len(loader)*batch_size
 
         pbar = tqdm(total=total_size, leave=True, unit='batches')
         classes = []
         boxes = []
+        masks = []
         for batch_idx, (imgs,_) in enumerate(loader):
             batch_size = imgs.shape[0]
 
@@ -221,26 +208,24 @@ class Trainer(object):
                 imgs = imgs.cuda()
 
             imgs = Variable(imgs, volatile=True)
-            cls_preds, box_preds = model(imgs)
-            b_classes, b_boxes = deanchorize(cls_preds.data, box_preds.data, imgs.shape[2:])
+            b_classes, b_boxes, b_masks = model(imgs)
             classes.append(b_classes)
             boxes.append(b_boxes)
+            masks.append(b_masks)
 
             pbar.update(batch_size)
         pbar.close()
-        return classes, boxes
+        return classes, boxes, masks
 
 
     def predict_on_batch(self, imgs):
         model = self.model
-        model.eval()
-        deanchorize = self.anchorizer.decode
+        model.predict()
         batch_size = imgs.shape[0]
 
         if self.cuda:
             imgs = imgs.cuda()
 
         imgs = Variable(imgs, volatile=True)
-        cls_preds, box_preds = model(imgs)
-        classes, boxes = deanchorize(cls_preds.data, box_preds.data, imgs.shape[2:])
-        return classes, boxes
+        classes, boxes, masks = model(imgs)
+        return classes, boxes, masks

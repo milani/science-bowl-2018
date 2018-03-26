@@ -2,7 +2,7 @@
 From https://github.com/kuangliu/pytorch-retinanet/blob/master/utils.py
 """
 import torch
-import pdb
+import torch.nn.functional as F
 
 def meshgrid(x, y, row_major=True):
     a = torch.arange(0,x)
@@ -53,15 +53,14 @@ def box_iou(box1, box2, order='xyxy'):
     # To avoid memory peak, I do some operations in-place
     # and re-order some others.
 
-    area1 = (box1[:,:,2]-box1[:,:,0]+1) * (box1[:,:,3]-box1[:,:,1]+1)  # [N,]
-    area2 = (box2[:,:,2]-box2[:,:,0]+1) * (box2[:,:,3]-box2[:,:,1]+1)  # [M,]
+    area1 = (box1[:,:,2]-box1[:,:,0]) * (box1[:,:,3]-box1[:,:,1])  # [N,]
+    area2 = (box2[:,:,2]-box2[:,:,0]) * (box2[:,:,3]-box2[:,:,1])  # [M,]
 
     box1 = box1[:,:,None,:]
     box2 = box2[:,None,:,:]
     # right_bottom - left_top + 1
     wh = torch.min(box1[:,:,:,2:], box2[:,:,:,2:])
     wh.sub_(torch.max(box1[:,:,:,:2], box2[:,:,:,:2]))
-    wh.add_(1)
     wh.clamp_(min=0)
 
     inter = wh[:,:,:,0] * wh[:,:,:,1]  # [b, N,M]
@@ -72,6 +71,8 @@ def box_iou(box1, box2, order='xyxy'):
     del area2
 
     iou = inter / union
+    # avoid nan
+    iou[iou != iou] = 0
     return iou
 
 def box_nms(bboxes, scores, threshold=0.5, mode='union'):
@@ -81,9 +82,11 @@ def box_nms(bboxes, scores, threshold=0.5, mode='union'):
     y2 = bboxes[:,3]
 
     areas = (x2-x1) * (y2-y1)
+    scores[areas <= 0] = 0.
     _, order = scores.sort(0, descending=True)
 
     keep = []
+
     while order.numel() > 0:
         i = order[0]
         keep.append(i)
@@ -107,10 +110,16 @@ def box_nms(bboxes, scores, threshold=0.5, mode='union'):
         else:
             raise TypeError('Unknown nms mode: %s.' % mode)
 
-        ids = (ovr<=threshold).nonzero().squeeze()
+
+        # avoid box-in-box
+        bib = ((1 - inter/areas[order[1:]]) < 0.1)
+
+        ids = ((ovr<=threshold) & (1-bib) ).nonzero().squeeze()
+
         if ids.numel() == 0:
             break
         order = order[ids+1]
+
     return torch.LongTensor(keep)
 
 def one_hot_embedding(labels, num_classes):
@@ -123,4 +132,43 @@ def one_hot_embedding(labels, num_classes):
     '''
     y = torch.eye(num_classes)  # [D,D]
     return y[labels.long()]     # [N,D]
+
+def crop_masks(masks, boxes, max_pool=False, pooling_size=21):
+    """
+    [  x2-x1             x1 + x2 - W + 1  ]
+    [  -----      0      ---------------  ]
+    [  W - 1                  W - 1       ]
+    [                                     ]
+    [           y2-y1    y1 + y2 - H + 1  ]
+    [    0      -----    ---------------  ]
+    [           H - 1         H - 1      ]
+    """
+    crops = []
+    for mask,box in zip(masks.data,boxes.data):
+
+        mask = mask.unsqueeze(1)
+
+        x1 = box[:, 0]
+        y1 = box[:, 1]
+        x2 = box[:, 2]
+        y2 = box[:, 3]
+
+        height = mask.size(2)
+        width = mask.size(3)
+
+        # affine theta
+        theta = torch.autograd.Variable(box.new(box.size(0), 2, 3).zero_())
+        theta[:, 0, 0] = ((x2 - x1) / (width - 1)).view(-1)
+        theta[:, 0 ,2] = ((x1 + x2 - width + 1) / (width - 1)).view(-1)
+        theta[:, 1, 1] = ((y2 - y1) / (height - 1)).view(-1)
+        theta[:, 1, 2] = ((y1 + y2 - height + 1) / (height - 1)).view(-1)
+
+        pre_pool_size = pooling_size * 2 if max_pool else pooling_size
+        grid = F.affine_grid(theta, torch.Size((box.size(0), 1, pre_pool_size, pre_pool_size)))
+        crop = F.grid_sample(mask, grid)
+        if max_pool:
+            crop = F.max_pool2d(crop, 2, 2)
+        crops.append(crop.permute(1,0,2,3))
+
+    return torch.cat(crops,0)
 

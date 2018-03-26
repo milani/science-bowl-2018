@@ -1,23 +1,54 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
+from torch.autograd import Variable
 from model.fpn import fpn50
+from model.layers.proposals import Proposals
+from model.layers.roi import Roi
+from model.layers.loss import FocalLoss
+from model.layers.anchors import Anchors
+from model.utils import crop_masks
 
 class RetinaNet(nn.Module):
-    def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9):
+    def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320):
         super(RetinaNet, self).__init__()
+        self.predicting = False
+        self.max_instances = max_instances
         self.fpn = fpn_factory()
+        self.anchorize = Anchors()
+        self.proposals = Proposals(max_instances=max_instances)
+        self.roi = Roi(max_instances=max_instances)
         self.num_classes = num_classes
         self.num_anchors = num_anchors
         self.cls_head = self._build_head(num_anchors * num_classes)
         self.box_head = self._build_head(num_anchors * 4)
+        self.mask_head = self._build_mask_head()
+        self.loss = FocalLoss(num_classes)
 
         self._init_cls_head(self.cls_head)
         self._init_head(self.box_head)
 
 
-    def forward(self, x):
-        feature_maps = self.fpn(x)
+    def predict(self):
+        self.eval()
+        self.predicting = True
+
+
+    def train(self, mode=True):
+        self.predicting = False
+        super(RetinaNet, self).train(mode)
+
+
+    def freeze_mask(self):
+        self.loss.include_mask = False
+        for param in self.mask_head.parameters():
+            param.requires_grad = False
+
+
+    def forward(self, imgs, classes=None, boxes=None, masks=None):
+        input_size = imgs.shape[2:]
+        feature_maps = self.fpn(imgs)
         box_preds = []
         cls_preds = []
 
@@ -25,14 +56,43 @@ class RetinaNet(nn.Module):
             cls_pred = self.cls_head(fm)
             box_pred = self.box_head(fm)
             # [N,9*2,H,W] -> [N,H,W,9*2] -> [N,H*W*9,2]
-            cls_pred = cls_pred.permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, self.num_classes)
+            cls_pred = cls_pred.permute(0, 2, 3, 1).contiguous().view(imgs.size(0), -1, self.num_classes)
             # [N,9*4,H,W] -> [N,H,W,9*4] -> [N,H*W*9,4]
-            box_pred = box_pred.permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, 4)
+            box_pred = box_pred.permute(0, 2, 3, 1).contiguous().view(imgs.size(0), -1, 4)
 
             cls_preds.append(cls_pred)
             box_preds.append(box_pred)
 
-        return torch.cat(cls_preds,1), torch.cat(box_preds,1)
+        cls_preds = torch.cat(cls_preds,1)
+        box_preds = torch.cat(box_preds,1)
+
+        cls_proposals, box_proposals, scores = self.proposals(cls_preds, box_preds, input_size)
+        for i in range(masks.shape[0]):
+            scores[i,190] = 1
+            cls_proposals[i,190] = 1
+            box_proposals[i,190,:] = boxes.data[i,0,:]
+
+        # TODO use a better approach for mixing ground truth boxes
+
+        roi_feature_maps = self.roi(feature_maps[0], box_proposals, scores)
+        mask_preds = []
+        for fm in roi_feature_maps:
+            mask_pred = self.mask_head(fm)
+            mask_pred = mask_pred.permute(1,0,2,3) # MASKS x 1 x 7 x 7 -> 1 x MASKS x 7 x 7
+            pad = self.max_instances - mask_pred.shape[1]
+            mask_preds.append(F.pad(mask_pred,(0,0,0,0,0,pad)))
+        mask_preds = torch.cat(mask_preds,0)
+
+        if self.predicting:
+            return cls_proposals, box_proposals, mask_preds
+
+        masks = crop_masks(masks, boxes)
+        classes, boxes = self.anchorize(classes, boxes, input_size)
+
+        losses = self.loss(cls_preds, classes, box_preds, boxes, mask_preds, masks)
+        cls_loss, box_loss, mask_loss, total_loss = losses
+
+        return cls_proposals, box_proposals, mask_preds, cls_loss, box_loss, mask_loss, total_loss
 
 
     def _build_head(self, num_planes):
@@ -43,6 +103,17 @@ class RetinaNet(nn.Module):
             layers.append(nn.ReLU(True))
 
         layers.append(nn.Conv2d(256, num_planes, kernel_size=3, stride=1, padding=1))
+        return nn.Sequential(*layers)
+
+
+    def _build_mask_head(self):
+        layers = []
+
+        for _ in range(4):
+            layers.append(nn.Conv2d(256,256, kernel_size=3, stride=1, padding=1))
+            layers.append(nn.ReLU(True))
+
+        layers.append(nn.Conv2d(256, 1, kernel_size=1, stride=1, padding=0))
         return nn.Sequential(*layers)
 
 

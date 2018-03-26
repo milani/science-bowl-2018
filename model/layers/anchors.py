@@ -1,11 +1,12 @@
-import torch
-import pdb
 import math
-from model.utils import meshgrid, box_iou, change_box_order, box_nms
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
+from model.utils import meshgrid, box_iou, change_box_order
 
-class Anchorizer(object):
+class Anchors(nn.Module):
     def __init__(self):
-        super(Anchorizer,self).__init__()
+        super(Anchors,self).__init__()
         self.anchor_areas = [4*4, 16*16, 64*64, 128*128]
         self.aspect_ratios = [1/2., 1/1., 2/1.]
         self.scale_ratios = [1., 2., 3/4.]#pow(2, 2/3.)]
@@ -44,7 +45,9 @@ class Anchorizer(object):
         return torch.cat(boxes, 0)
 
 
-    def encode(self, labels, boxes, input_size):
+    def forward(self, labels:Variable, boxes:Variable, input_size):
+        boxes = boxes.data
+        labels = labels.data
         dtype = boxes.type()
         batch_size = boxes.shape[0]
         if isinstance(input_size,torch.Size):
@@ -65,37 +68,4 @@ class Anchorizer(object):
         cls_targets[max_ious<0.5] = 0
         ignore = (max_ious>0.4) & (max_ious<0.5)
         cls_targets[ignore] = -1
-        return cls_targets, loc_targets
-
-
-    def decode(self, cls_preds, box_preds, input_size):
-        CLS_THRESH = 0.2
-        NMS_THRESH = 0.8
-        dtype = box_preds.type()
-        batch_size = box_preds.shape[0]
-        if isinstance(input_size,torch.Size):
-            input_size = tuple(input_size)
-        input_size = torch.Tensor(input_size)
-        anchor_boxes = self._get_anchor_boxes(input_size).type(dtype)
-        anchor_boxes = anchor_boxes.unsqueeze(0).expand(batch_size,*anchor_boxes.shape)
-
-        box_xy = box_preds[:,:,:2]
-        box_wh = box_preds[:,:,2:]
-        xy = box_xy * anchor_boxes[:,:,2:] + anchor_boxes[:,:,:2]
-        wh = box_wh.exp() * anchor_boxes[:,:,2:]
-        boxes = torch.cat([xy-wh/2, xy+wh/2], 2)
-        score, classes = cls_preds.sigmoid().max(2)
-        box_results = []
-        class_results = []
-        for b in range(batch_size):
-            ids = score[b,:] > CLS_THRESH
-            ids = ids.nonzero().squeeze()
-            if len(ids) == 0:
-                class_results.append([])
-                box_results.append([])
-                continue
-            keep = box_nms(boxes[b][ids], score[b][ids], threshold=NMS_THRESH).type(dtype).long()
-            box_results.append(boxes[b][ids[keep]])
-            class_results.append(classes[b][ids[keep]])
-
-        return class_results, box_results
+        return Variable(cls_targets, requires_grad=False), Variable(loc_targets, requires_grad=False)
