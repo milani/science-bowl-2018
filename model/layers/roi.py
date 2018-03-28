@@ -13,9 +13,13 @@ class Roi(nn.Module):
         self.pre_pool_size = self.pooling_size * 2 if max_pooling else self.pooling_size
 
 
-    def forward(self, feature_maps:Variable, proposals:Variable, scores:Variable):
+    def forward(self, feature_maps:Variable, proposals:Variable, scores:Variable, original_size):
         batch_size = len(proposals)
         height, width = feature_maps.shape[2:]
+        orig_height, orig_width = original_size
+        scales = proposals.data.new([[[width/orig_width, height/orig_height, width/orig_width, height/orig_height]]])
+        scales = Variable(scales, requires_grad=False)
+        proposals = proposals * scales
         rois = []
         for b in range(batch_size):
             assert len(proposals[b]) > 0, "Make sure at least one proposal is offered for region of interest pooling"

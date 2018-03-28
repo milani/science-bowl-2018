@@ -74,7 +74,7 @@ class RetinaNet(nn.Module):
 
         # TODO use a better approach for mixing ground truth boxes
 
-        roi_feature_maps = self.roi(feature_maps[0], box_proposals, scores)
+        roi_feature_maps = self.roi(feature_maps[0], box_proposals, scores, input_size)
         mask_preds = []
         for fm in roi_feature_maps:
             mask_pred = self.mask_head(fm)
