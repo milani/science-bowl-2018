@@ -12,8 +12,6 @@ class GroupNorm2d(nn.Module):
 
 
     def forward(self, x):
-        import pdb
-        pdb.set_trace()
         N, C, H, W = x.size()
         G = self.num_groups
         assert C % G == 0
