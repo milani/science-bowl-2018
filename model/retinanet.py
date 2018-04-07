@@ -11,14 +11,15 @@ from model.layers.anchors import Anchors
 from model.utils import crop_masks, place_masks
 
 class RetinaNet(nn.Module):
-    def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320):
+    def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320, pooling_size=21):
         super(RetinaNet, self).__init__()
+        self.pooling_size = pooling_size
         self.predicting = False
         self.max_instances = max_instances
         self.fpn = fpn_factory()
         self.anchorize = Anchors()
         self.proposals = Proposals(max_instances=max_instances)
-        self.roi = Roi(max_instances=max_instances)
+        self.roi = Roi(max_instances=max_instances,pooling_size=pooling_size)
         self.num_classes = num_classes
         self.num_anchors = num_anchors
         self.cls_head = self._build_head(num_anchors * num_classes)
@@ -83,11 +84,12 @@ class RetinaNet(nn.Module):
             mask_preds.append(F.pad(mask_pred,(0,0,0,0,0,pad)))
         mask_preds = torch.cat(mask_preds,0)
 
+
         if self.predicting:
             mask_preds = place_masks(mask_preds, box_proposals, input_size)
             return cls_proposals, box_proposals, mask_preds
 
-        masks = crop_masks(masks, boxes)
+        masks = crop_masks(masks, boxes, pooling_size=self.pooling_size)
         classes, boxes = self.anchorize(classes, boxes, input_size)
 
         losses = self.loss(cls_preds, classes, cls_proposals, box_preds, boxes, mask_preds, masks)
