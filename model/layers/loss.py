@@ -28,7 +28,7 @@ class FocalLoss(nn.Module):
         return res
 
 
-    def forward(self, cls_preds, cls_targets, box_preds, box_targets, mask_preds, mask_targets):
+    def forward(self, cls_preds, cls_targets, cls_proposals, box_preds, box_targets, mask_preds, mask_targets):
         """ Compute focal loss for boxes and targets
         """
         batch_size, num_boxes = cls_targets.size()
@@ -47,9 +47,13 @@ class FocalLoss(nn.Module):
 
         mask_loss = Variable(box_loss.data.new(1).fill_(0))
         if self.include_mask:
-            pad_size = mask_preds.shape[1] - mask_targets.shape[1]
+            mask_size = mask_preds.shape[2]
+            max_detections = int(cls_proposals.sum(dim=1).max())
+            pad_size = max_detections - mask_targets.shape[1]
             mask_targets = F.pad(mask_targets, (0,0,0,0,0,pad_size))
-            mask_loss = F.binary_cross_entropy_with_logits(mask_preds, mask_targets, size_average=False).clamp(max=100)
+            pad_size = max_detections - mask_preds.shape[1]
+            mask_preds = F.pad(mask_preds, (0,0,0,0,0,pad_size))
+            mask_loss = F.binary_cross_entropy_with_logits(mask_preds, mask_targets, size_average=False)
 
         avg_loss = (box_loss + cls_loss + mask_loss)/num_pos
         return cls_loss, box_loss, mask_loss, avg_loss

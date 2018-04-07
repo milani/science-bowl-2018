@@ -90,7 +90,7 @@ class RetinaNet(nn.Module):
         masks = crop_masks(masks, boxes)
         classes, boxes = self.anchorize(classes, boxes, input_size)
 
-        losses = self.loss(cls_preds, classes, box_preds, boxes, mask_preds, masks)
+        losses = self.loss(cls_preds, classes, cls_proposals, box_preds, boxes, mask_preds, masks)
         cls_loss, box_loss, mask_loss, total_loss = losses
 
         mask_preds = place_masks(mask_preds, box_proposals, input_size)
