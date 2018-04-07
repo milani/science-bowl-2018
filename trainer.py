@@ -1,11 +1,12 @@
+import os
 import torch
 import torch.nn.functional as F
+import numpy as np
 import pdb
-import os
 from collections import OrderedDict
 from glob import glob
 from tqdm import tqdm
-from model.utils import box_iou
+from model.utils import box_iou, mask_iou
 from torch.autograd import Variable
 
 class Trainer(object):
@@ -131,9 +132,9 @@ class Trainer(object):
                 pbar.set_postfix({'loss':avg_loss, 'class loss':avg_cls_loss,'box loss':avg_box_loss, 'mask loss':avg_mask_loss})
 
             if val_loader is not None:
-                eval_loss, eval_metric = self.evaluate(val_loader)
+                eval_loss, box_metric, mask_metric = self.evaluate(val_loader)
 
-            pbar.set_postfix({'loss':avg_loss, 'val_loss':eval_loss, 'mAP':eval_metric})
+            pbar.set_postfix({'loss':avg_loss, 'val_loss':eval_loss, 'box mAP':box_metric, 'mask mAP':mask_metric})
             pbar.close()
             self.epoch = epoch
             self.checkpoint()
@@ -144,7 +145,7 @@ class Trainer(object):
         model.eval()
 
         avg_loss = 0
-        metric = 0
+        box_metric, mask_metric = 0, 0
         samples_seen = 0
         for batch_idx, (imgs, masks, boxes, classes, names) in enumerate(val_loader):
             batch_size = imgs.shape[0]
@@ -165,16 +166,22 @@ class Trainer(object):
             cls_proposals, box_proposals, mask_preds, cls_loss, box_loss, mask_loss, total_loss = returns
             avg_loss = (samples_seen * avg_loss + batch_size * total_loss.data[0]) / (samples_seen + batch_size)
 
-            metric += self.evaluate_metric(cls_proposals, classes, box_proposals, boxes, input_size)
+            box_m, mask_m = self.evaluate_metrics(cls_proposals, classes, box_proposals, boxes, mask_preds, masks, input_size)
+            box_metric, mask_metric = box_metric + box_m, mask_metric + mask_m
 
             samples_seen +=  batch_size
 
 
         model.train()
-        return avg_loss, metric/samples_seen
+        return avg_loss, box_metric/samples_seen, mask_metric/samples_seen
 
 
-    def evaluate_metric(self, cls_preds, classes, box_preds, boxes, input_size):
+    def evaluate_metrics(self, cls_preds, classes, box_preds, boxes, mask_preds, masks, input_size):
+        box_prec = self.evaluate_box_precision(cls_preds, classes, box_preds, boxes, input_size)
+        mask_prec = self.evaluate_mask_precision(mask_preds, masks)
+        return box_prec, mask_prec
+
+    def evaluate_box_precision(self, cls_preds, classes, box_preds, boxes, input_size):
         ious = box_iou(box_preds.data, boxes.data, order='xyxy')
         num_pred = (cls_preds.data > 0).sum(dim=1).float()
         num_true = (classes.data > 0).sum(dim=1).float()
@@ -189,6 +196,21 @@ class Trainer(object):
             p += tp / (tp + fp + fn)
 
         return p.sum() / len(thresholds)
+
+
+    def evaluate_mask_precision(self, mask_preds, masks):
+        ious = mask_iou(mask_preds, masks)
+        thresholds = list(np.arange(0.5, 1.0, 0.05))
+        p = 0
+        for iou in ious:
+            for t in thresholds:
+                matches = iou > t
+                tp = np.sum(np.sum(matches, axis=1) == 1)
+                fp = np.sum(np.sum(matches, axis=0) == 0)
+                fn = np.sum(np.sum(matches, axis=1) == 0)
+                p += tp / (tp + fp + fn)
+        n = len(thresholds) * len(ious)
+        return p / n
 
 
     def predict(self, loader):

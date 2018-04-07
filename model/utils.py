@@ -3,6 +3,9 @@ From https://github.com/kuangliu/pytorch-retinanet/blob/master/utils.py
 """
 import torch
 import torch.nn.functional as F
+import numpy as np
+from torch.autograd import Variable
+from skimage.transform import resize
 
 def meshgrid(x, y, row_major=True):
     a = torch.arange(0,x)
@@ -10,6 +13,71 @@ def meshgrid(x, y, row_major=True):
     xx = a.repeat(y).view(-1,1)
     yy = b.view(-1,1).repeat(1,x).view(-1,1)
     return torch.cat([xx,yy],1) if row_major else torch.cat([yy,xx],1)
+
+def place_masks(masks, boxes, input_size):
+	masks = masks.data.sigmoid()
+	boxes = boxes.data.long()
+	in_height, in_width = input_size
+	boxes[:,:,0].clamp_(min=0)
+	boxes[:,:,1].clamp_(min=0)
+	boxes[:,:,2].clamp_(max=in_width)
+	boxes[:,:,3].clamp_(max=in_height)
+
+	output = []
+	for bmask, bbox in zip(masks, boxes):
+		rmask = []
+		for i, mask in enumerate(bmask):
+			resized_mask = torch.zeros(in_height,in_width)
+
+			x1 = bbox[i,0]
+			y1 = bbox[i,1]
+			x2 = bbox[i,2]
+			y2 = bbox[i,3]
+			height, width = y2 - y1, x2 - x1
+
+			if height >= 1 and width >= 1:
+				scaled_mask = torch.Tensor(resize(mask,(height,width),mode='constant'))
+				resized_mask[x1:x2, y1:y2] = scaled_mask > 0.6
+
+			rmask.append(resized_mask.unsqueeze(0))
+		output.append(torch.cat(rmask, 0).unsqueeze(0))
+	return Variable(torch.cat(output,0))
+
+def seq_label(masks):
+    # num_batch x num_masks x height x width
+    num_batch, num_masks = masks.shape[0:2]
+    labels = masks.new(list(range(num_masks))) + 1
+    labels = labels.unsqueeze(0).expand(num_batch,-1).unsqueeze(2).unsqueeze(2)
+    masks = torch.sum(masks * labels,dim=1)
+    return masks
+
+def mask_iou(mask_preds, masks):
+    masks = seq_label(masks.data)
+    mask_preds = seq_label(mask_preds.data)
+    masks = masks.cpu().numpy()
+    mask_preds = mask_preds.cpu().numpy()
+    batch_size = masks.shape[0]
+
+    ious = []
+    for b in range(batch_size):
+        true = masks[b]
+        pred = mask_preds[b]
+        true_objects = int(true.max()) + 1
+        pred_objects = int(pred.max()) + 1
+        intersection = np.histogram2d(true.flatten(), pred.flatten(), bins=(true_objects, pred_objects))[0]
+        area_true = np.histogram(true, bins=true_objects)[0]
+        area_pred = np.histogram(pred, bins=pred_objects)[0]
+        area_true = np.expand_dims(area_true, -1)
+        area_pred = np.expand_dims(area_pred, 0)
+        union = area_true + area_pred - intersection
+
+        intersection = intersection[1:,1:]
+        union = union[1:,1:]
+        union[union == 0] = 1e-9
+
+        ious.append(intersection/union)
+
+    return ious
 
 def change_box_order(boxes, order):
     '''Change box order between (xmin,ymin,xmax,ymax) and (xcenter,ycenter,width,height).

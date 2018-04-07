@@ -8,7 +8,7 @@ from model.layers.proposals import Proposals
 from model.layers.roi import Roi
 from model.layers.loss import FocalLoss
 from model.layers.anchors import Anchors
-from model.utils import crop_masks
+from model.utils import crop_masks, place_masks
 
 class RetinaNet(nn.Module):
     def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320):
@@ -84,6 +84,7 @@ class RetinaNet(nn.Module):
         mask_preds = torch.cat(mask_preds,0)
 
         if self.predicting:
+            mask_preds = place_masks(mask_preds, box_proposals, input_size)
             return cls_proposals, box_proposals, mask_preds
 
         masks = crop_masks(masks, boxes)
@@ -91,6 +92,8 @@ class RetinaNet(nn.Module):
 
         losses = self.loss(cls_preds, classes, box_preds, boxes, mask_preds, masks)
         cls_loss, box_loss, mask_loss, total_loss = losses
+
+        mask_preds = place_masks(mask_preds, box_proposals, input_size)
 
         return cls_proposals, box_proposals, mask_preds, cls_loss, box_loss, mask_loss, total_loss
 
