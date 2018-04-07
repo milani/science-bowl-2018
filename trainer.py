@@ -49,7 +49,7 @@ class Trainer(object):
 
     def save_checkpoint(self, path):
         checkpoint = {
-                'epoch': self.epoch + 1,
+                'epoch': self.epoch,
                 'state_dict': self.model.state_dict(),
                 'optimizer': self.optim.state_dict()
         }
@@ -249,5 +249,4 @@ class Trainer(object):
             imgs = imgs.cuda()
 
         imgs = Variable(imgs, volatile=True)
-        classes, boxes, masks = model(imgs)
-        return classes, boxes, masks
+        return model(imgs)
