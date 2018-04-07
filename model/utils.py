@@ -15,33 +15,33 @@ def meshgrid(x, y, row_major=True):
     return torch.cat([xx,yy],1) if row_major else torch.cat([yy,xx],1)
 
 def place_masks(masks, boxes, input_size):
-	masks = masks.data.sigmoid()
-	boxes = boxes.data.long()
-	in_height, in_width = input_size
-	boxes[:,:,0].clamp_(min=0)
-	boxes[:,:,1].clamp_(min=0)
-	boxes[:,:,2].clamp_(max=in_width)
-	boxes[:,:,3].clamp_(max=in_height)
+    masks = masks.data.sigmoid()
+    boxes = boxes.data.long()
+    in_height, in_width = input_size
+    boxes[:,:,0].clamp_(min=0)
+    boxes[:,:,1].clamp_(min=0)
+    boxes[:,:,2].clamp_(max=in_width)
+    boxes[:,:,3].clamp_(max=in_height)
 
-	output = []
-	for bmask, bbox in zip(masks, boxes):
-		rmask = []
-		for i, mask in enumerate(bmask):
-			resized_mask = torch.zeros(in_height,in_width)
+    output = []
+    for bmask, bbox in zip(masks, boxes):
+        rmask = []
+        for i, mask in enumerate(bmask):
+            resized_mask = masks.new(in_height,in_width).fill_(0)
 
-			x1 = bbox[i,0]
-			y1 = bbox[i,1]
-			x2 = bbox[i,2]
-			y2 = bbox[i,3]
-			height, width = y2 - y1, x2 - x1
+            x1 = bbox[i,0]
+            y1 = bbox[i,1]
+            x2 = bbox[i,2]
+            y2 = bbox[i,3]
+            height, width = y2 - y1, x2 - x1
 
-			if height >= 1 and width >= 1:
-				scaled_mask = torch.Tensor(resize(mask,(height,width),mode='constant'))
-				resized_mask[x1:x2, y1:y2] = scaled_mask > 0.6
+            if height >= 1 and width >= 1:
+                scaled_mask = torch.Tensor(resize(mask,(height,width),mode='constant'))
+                resized_mask[x1:x2, y1:y2] = scaled_mask > 0.6
 
-			rmask.append(resized_mask.unsqueeze(0))
-		output.append(torch.cat(rmask, 0).unsqueeze(0))
-	return Variable(torch.cat(output,0))
+            rmask.append(resized_mask.unsqueeze(0))
+        output.append(torch.cat(rmask, 0).unsqueeze(0))
+    return Variable(torch.cat(output,0))
 
 def seq_label(masks):
     # num_batch x num_masks x height x width
