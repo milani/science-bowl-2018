@@ -47,6 +47,12 @@ class RetinaNet(nn.Module):
             param.requires_grad = False
 
 
+    def unfreeze_mask(self):
+        self.loss.include_mask = True
+        for param in self.mask_head.parameters():
+            param.requires_grad = True
+
+
     def forward(self, imgs, classes=None, boxes=None, masks=None):
         input_size = imgs.shape[2:]
         feature_maps = self.fpn(imgs)
