@@ -37,7 +37,7 @@ def place_masks(masks, boxes, input_size):
 
             if height >= 1 and width >= 1:
                 scaled_mask = torch.Tensor(resize(mask,(height,width),mode='constant'))
-                resized_mask[x1:x2, y1:y2] = scaled_mask > 0.6
+                resized_mask[y1:y2, x1:x2] = scaled_mask > 0.6
 
             rmask.append(resized_mask.unsqueeze(0))
         output.append(torch.cat(rmask, 0).unsqueeze(0))
