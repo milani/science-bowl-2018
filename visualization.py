@@ -90,6 +90,54 @@ def display_image_masks(image, masks, boxes=None, title="",
     plt.show()
 
 
+def display_image_anchors(image, boxes=None, title="",
+                      figsize=(16, 16),  ax=None, channel_first=True):
+    """
+    Displays image and its masks. Supports channel first types for both
+    image and masks.
+    image: either [c, w, h] or [w, h, c]
+    masks: [num, w, h]
+    boxes: if available, shows boxes [n x 4]
+    """
+    if isinstance(image,torch.Tensor):
+        image = (255*image.numpy()).astype(np.uint8)
+
+    if channel_first:
+        image = np.transpose(image,(1,2,0))
+    # Number of instances
+    N = boxes.shape[0]
+    if not ax:
+        _, ax = plt.subplots(1, figsize=figsize)
+
+    # Generate random colors
+    colors = random_colors(N)
+
+    # Show area outside image boundaries.
+    height, width = image.shape[:2]
+    ax.set_ylim(height + 10, -10)
+    ax.set_xlim(-10, width + 10)
+    ax.axis('off')
+    ax.set_title(title)
+
+    masked_image = image.copy()
+    for i in range(N):
+        color = colors[i]
+
+        # Bounding Box
+        if boxes is not None:
+            if not np.any(boxes[i]):
+                # Skip this instance, probably lost in image cropping
+                continue
+            x1, y1, x2, y2 = boxes[i]
+            p = Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                    alpha=0.7, linestyle='dashed',
+                    edgecolor=color, facecolor='none')
+            ax.add_patch(p)
+
+    ax.imshow(masked_image)
+    plt.show()
+
+
 def random_colors(N, bright=True):
     """
     Generate random colors.
