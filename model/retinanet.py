@@ -7,7 +7,6 @@ from model.fpn import fpn50
 from model.layers.proposals import Proposals
 from model.layers.roi import Roi
 from model.layers.loss import FocalLoss
-from model.layers.anchors import Anchors
 from model.utils import crop_masks, place_masks
 
 class RetinaNet(nn.Module):
@@ -17,7 +16,6 @@ class RetinaNet(nn.Module):
         self.predicting = False
         self.max_instances = max_instances
         self.fpn = fpn_factory()
-        self.anchorize = Anchors()
         self.proposals = Proposals(max_instances=max_instances)
         self.roi = Roi(max_instances=max_instances,pooling_size=pooling_size)
         self.num_classes = num_classes
@@ -97,9 +95,8 @@ class RetinaNet(nn.Module):
             return cls_proposals, box_proposals, mask_preds
 
         masks = crop_masks(masks, boxes, pooling_size=self.pooling_size)
-        classes, boxes = self.anchorize(classes, boxes, input_size)
 
-        losses = self.loss(cls_preds, classes, cls_proposals, box_preds, boxes, mask_preds, masks)
+        losses = self.loss(cls_preds, classes, box_preds, boxes, mask_preds, masks, input_size)
         cls_loss, box_loss, mask_loss, total_loss = losses
 
         mask_preds = place_masks(mask_preds, box_proposals, input_size)
