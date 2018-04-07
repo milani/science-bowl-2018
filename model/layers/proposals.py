@@ -14,7 +14,7 @@ class Proposals(Anchors):
 
     def forward(self, cls_preds:Variable, box_preds:Variable, input_size:torch.Size):
         CLS_THRESH = 0.3
-        NMS_THRESH = 0.6
+        NMS_THRESH = 0.7
         max_instances = self.max_instances
         box_preds = box_preds.data
         cls_preds = cls_preds.data

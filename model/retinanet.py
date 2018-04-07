@@ -121,7 +121,7 @@ class RetinaNet(nn.Module):
     def _build_mask_head(self):
         layers = []
 
-        for _ in range(4):
+        for _ in range(3):
             layers.append(nn.Conv2d(256,256, kernel_size=3, stride=1, padding=1))
             layers.append(nn.ReLU(True))
 

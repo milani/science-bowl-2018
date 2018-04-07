@@ -77,6 +77,7 @@ class NucleiDataset(Dataset):
         num_masks = masks.shape[-1]
         return np.array([1]*num_masks)
 
+
     def _generate_boxes(self, masks):
         # TODO: support multi-class
         num_masks = masks.shape[-1]
