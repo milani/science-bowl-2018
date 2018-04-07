@@ -74,12 +74,14 @@ class RetinaNet(nn.Module):
         box_preds = torch.cat(box_preds,1)
 
         cls_proposals, box_proposals, scores = self.proposals(cls_preds, box_preds, input_size)
-        for i in range(masks.shape[0]):
-            scores[i,190] = 1
-            cls_proposals[i,190] = 1
-            box_proposals[i,190,:] = boxes.data[i,0,:]
 
         # TODO use a better approach for mixing ground truth boxes
+        if not self.predicting:
+            last_index = min(int(cls_proposals.sum(dim=1).max()), self.max_instances - 1)
+            for i in range(masks.shape[0]):
+                scores[i,last_index] = 1
+                cls_proposals[i,last_index] = 1
+                box_proposals[i,last_index,:] = boxes.data[i,0,:]
 
         roi_feature_maps = self.roi(feature_maps[0], box_proposals, scores, input_size)
         mask_preds = []
@@ -89,7 +91,6 @@ class RetinaNet(nn.Module):
             pad = self.max_instances - mask_pred.shape[1]
             mask_preds.append(F.pad(mask_pred,(0,0,0,0,0,pad)))
         mask_preds = torch.cat(mask_preds,0)
-
 
         if self.predicting:
             mask_preds = place_masks(mask_preds, box_proposals, input_size)
