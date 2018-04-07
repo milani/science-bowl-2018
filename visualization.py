@@ -70,6 +70,7 @@ def display_image_masks(image, masks, boxes=None, title="",
                     alpha=0.7, linestyle='dashed',
                     edgecolor=color, facecolor='none')
             ax.add_patch(p)
+            ax.text(x1,y1,i,ha="left",va="top",fontdict={'color':color})
 
         # Mask
         mask = masks[i, :, :]
