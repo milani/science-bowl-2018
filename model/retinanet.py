@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
 from model.fpn import fpn50
+from model.layers.groupnorm import GroupNorm2d
 from model.layers.proposals import Proposals
 from model.layers.roi import Roi
 from model.layers.loss import FocalLoss
@@ -109,6 +110,7 @@ class RetinaNet(nn.Module):
 
         for _ in range(4):
             layers.append(nn.Conv2d(256,256, kernel_size=3, stride=1, padding=1))
+            layers.append(GroupNorm2d(256))
             layers.append(nn.ReLU(True))
 
         layers.append(nn.Conv2d(256, num_planes, kernel_size=3, stride=1, padding=1))
@@ -118,8 +120,9 @@ class RetinaNet(nn.Module):
     def _build_mask_head(self):
         layers = []
 
-        for _ in range(3):
+        for _ in range(4):
             layers.append(nn.Conv2d(256,256, kernel_size=3, stride=1, padding=1))
+            layers.append(GroupNorm2d(256))
             layers.append(nn.ReLU(True))
 
         layers.append(nn.Conv2d(256, 1, kernel_size=1, stride=1, padding=0))
