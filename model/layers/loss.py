@@ -67,6 +67,6 @@ class FocalLoss(nn.Module):
         mask = pos_neg.unsqueeze(2).expand_as(cls_preds)
         masked_cls_preds = cls_preds[mask].view(-1,self.num_classes)
         cls_loss = self.focal_loss(masked_cls_preds, cls_targets[pos_neg])
-        avg_loss = (box_loss + cls_loss)/num_pos + mask_loss
+        avg_loss = box_loss + cls_loss + mask_loss
         return cls_loss, box_loss, mask_loss, avg_loss
 
