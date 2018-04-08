@@ -1,5 +1,3 @@
-""" Heavily influenced by torchvision's MNIST implementation
-"""
 import os
 import numpy as np
 import skimage.io as io
@@ -26,11 +24,12 @@ class NucleiDataset(Dataset):
 
         if self.with_masks:
             masks = self._load_masks(path)
-            boxes = self._generate_boxes(masks)
             classes = self._generate_classes(masks)
 
             if self.augment is not None:
-                img, masks, boxes = self.augment(img, masks, boxes)
+                img, masks = self.augment(img, masks)
+
+            boxes = self._generate_boxes(masks)
 
             if self.transform is not None:
                 # copy is required to avoid negative strides
@@ -81,7 +80,7 @@ class NucleiDataset(Dataset):
     def _generate_boxes(self, masks):
         # TODO: support multi-class
         num_masks = masks.shape[-1]
-        h, w = masks.shape[0], masks.shape[1]
+        h, w = masks.shape[:2]
         boxes = np.zeros((num_masks,4),dtype=np.int32)
 
         for i in range(num_masks):

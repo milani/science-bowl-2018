@@ -7,7 +7,7 @@ from data.dataset import NucleiDataset
 from data.utils import ToTensor
 from imgaug.augmenters import Fliplr, Flipud
 from torch._six import string_classes
-from torch.utils.data.sampler import SubsetRandomSampler 
+from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data import DataLoader
 
@@ -27,7 +27,7 @@ def train_validation_loaders(data_dir, validation_dir=None,
     ])
 
     augmenters = augments.Compose([
-        augments.FixedResizeAndPad(min_size, max_size, interpolation='linear'),
+        augments.FixedRandomCrop(min_size, interpolation='linear'),
         Fliplr(0.5),
         Flipud(0.5)
     ])
