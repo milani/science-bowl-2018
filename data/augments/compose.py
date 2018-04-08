@@ -15,13 +15,37 @@ class Compose(object):
         self.augmenters = Sequential(augmenters)
 
 
-    def __call__(self, img, mask=None, boxes=None):
-        if mask is not None:
-            aug_det = self.augmenters.to_deterministic()
-            bboxes = BoundingBoxesOnImage([BoundingBox(*box) for box in boxes], img.shape)
-            new_bboxes = aug_det.augment_bounding_boxes([bboxes])[0]
-            boxes = [[box.x1, box.y1, box.x2, box.y2] for box in new_bboxes.bounding_boxes]
-            return aug_det.augment_image(img), aug_det.augment_image(mask), np.array(boxes)
-
+    def __call__(self, img, masks=None, boxes=None):
+        if masks is not None:
+            returns = self.augment(img, masks, boxes)
+            while returns[1].shape[-1] == 0:
+                returns = self.augment(img, masks, boxes)
+            return returns
         return self.augmenters.augment_image(img)
+
+
+    def augment(self, img, masks=None, boxes=None):
+        returns = []
+        aug_det = self.augmenters.to_deterministic()
+
+        # augment image
+        input_size = img.shape
+        img = aug_det.augment_image(img)
+        returns.append(img)
+
+        # augment masks
+        new_masks = aug_det.augment_image(masks)
+        null_masks = new_masks.sum(axis=0).sum(axis=0) == 0
+        new_masks = new_masks[:,:,~null_masks]
+        returns.append(new_masks)
+
+        if boxes is not None:
+            # augment boxes
+            bboxes = BoundingBoxesOnImage([BoundingBox(*box) for box in boxes], input_size)
+            new_bboxes = aug_det.augment_bounding_boxes([bboxes])[0]
+            new_bboxes = new_bboxes.remove_out_of_image().cut_out_of_image()
+            boxes = [[box.x1, box.y1, box.x2, box.y2] for box in new_bboxes.bounding_boxes]
+            boxes = np.array(boxes)
+            returns.append(boxes)
+        return tuple(returns)
 
