@@ -13,7 +13,7 @@ MAX_SIZE=320
 MIN_SIZE=320
 NUM_WORKERS=2
 NUM_EPOCHS=250
-LEARNING_RATE=10e-6
+BASE_LR=10e-4
 
 train_dir = os.path.join(DATASET_DIR,'stage1_train')
 
@@ -21,6 +21,12 @@ train_loader, val_loader = train_validation_loaders(train_dir,min_size=MIN_SIZE,
 
 model = RetinaNet()
 
-trainer = Trainer(model)
-trainer.load_checkpoint(trainer.latest_checkpoint())
-trainer.fit(train_loader, val_loader, num_epochs=NUM_EPOCHS,lr=LEARNING_RATE)
+trainer = Trainer(model, force_single_gpu=False, lr=BASE_LR)
+
+try:
+    trainer.load_checkpoint(trainer.latest_checkpoint())
+except RuntimeError as err:
+    print("Warn: No checkpoints loaded.")
+    print(err)
+
+trainer.fit(train_loader, val_loader, num_epochs=NUM_EPOCHS)
