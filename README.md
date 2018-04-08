@@ -16,4 +16,4 @@ Please download data from https://www.kaggle.com/c/data-science-bowl-2018/data a
 * torch (0.3.0)
 * tqdm
 * glob
-* imgaug (0.2.4)
+* imgaug (0.2.5)
