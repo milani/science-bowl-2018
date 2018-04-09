@@ -10,17 +10,19 @@ class Proposals(Anchors):
     def __init__(self, max_instances = 320):
         super(Proposals,self).__init__()
         self.max_instances = max_instances
+        self.softmax = nn.Softmax(dim=2)
 
 
     def forward(self, cls_preds:Variable, box_preds:Variable, input_size:torch.Size):
-        CLS_THRESH = 0.3
+        CLS_THRESH = 0.6
         NMS_THRESH = 0.7
         max_instances = self.max_instances
+        cls_probs = self.softmax(cls_preds).data
         box_preds = box_preds.data
         cls_preds = cls_preds.data
         dtype = cls_preds.type()
         batch_size = cls_preds.shape[0]
-        scores, classes, boxes = self.deanchorize(cls_preds, box_preds, input_size)
+        scores, classes, boxes = self.deanchorize(cls_probs, box_preds, input_size)
         box_results = box_preds.new(batch_size, max_instances, 4).fill_(0)
         class_results = box_preds.new(batch_size, max_instances).fill_(0)
         score_results = box_preds.new(batch_size, max_instances).fill_(0)
@@ -28,20 +30,21 @@ class Proposals(Anchors):
         for b in range(batch_size):
             ids = scores[b,:] > CLS_THRESH
             ids = ids.nonzero().squeeze()
-            if len(ids) == 0:
-                continue
             keep = box_nms(boxes[b][ids], scores[b][ids], threshold=NMS_THRESH).type(dtype).long()
             keep_ids = ids[keep]
+            # put positive rois first
+            _, order = classes[b][keep_ids].sort(descending=True)
+            keep_ids = keep_ids[order]
             if len(keep_ids) > max_instances:
                 keep_ids = keep_ids[:max_instances]
             box_results[b][:len(keep_ids),:] = boxes[b][keep_ids]
-            class_results[b][:len(keep_ids)] = classes[b][keep_ids] + 1
+            class_results[b][:len(keep_ids)] = classes[b][keep_ids]
             score_results[b][:len(keep_ids)] = scores[b][keep_ids]
 
         return Variable(class_results, requires_grad=False), Variable(box_results, requires_grad=False), Variable(score_results, requires_grad=False)
 
 
-    def deanchorize(self, cls_preds, box_preds, input_size):
+    def deanchorize(self, cls_probs, box_preds, input_size):
         dtype = box_preds.type()
         batch_size = box_preds.shape[0]
         if isinstance(input_size,torch.Size):
@@ -55,6 +58,6 @@ class Proposals(Anchors):
         xy = box_xy * anchor_boxes[:,:,2:] + anchor_boxes[:,:,:2]
         wh = box_wh.exp() * anchor_boxes[:,:,2:]
         boxes = torch.cat([xy-wh/2, xy+wh/2], 2)
-        scores, classes = cls_preds.sigmoid().max(2)
+        scores, classes = cls_probs.max(2)
 
         return scores, classes, boxes

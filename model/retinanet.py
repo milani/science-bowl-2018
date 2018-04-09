@@ -19,12 +19,12 @@ class RetinaNet(nn.Module):
         self.fpn = fpn_factory()
         self.proposals = Proposals(max_instances=max_instances)
         self.roi = Roi(max_instances=max_instances,pooling_size=pooling_size)
-        self.num_classes = num_classes
+        self.num_classes = num_classes + 1 # including background
         self.num_anchors = num_anchors
-        self.cls_head = self._build_head(num_anchors * num_classes)
+        self.cls_head = self._build_head(num_anchors * self.num_classes)
         self.box_head = self._build_head(num_anchors * 4)
         self.mask_head = self._build_mask_head()
-        self.loss = FocalLoss(num_classes)
+        self.loss = FocalLoss(self.num_classes)
 
         self._init_cls_head(self.cls_head)
         self._init_head(self.box_head)

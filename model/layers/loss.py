@@ -6,7 +6,7 @@ from model.utils import one_hot_embedding
 from model.layers.anchors import Anchors
 
 class FocalLoss(nn.Module):
-    def __init__(self, num_classes=1):
+    def __init__(self, num_classes=2):
         super(FocalLoss, self).__init__()
         self.num_classes = num_classes
         self.include_mask = True
@@ -17,7 +17,8 @@ class FocalLoss(nn.Module):
         alpha = 0.25
         gamma = 2
 
-        t = one_hot_embedding(y.data.cpu(), 1+self.num_classes)  # [N,2]
+        t = one_hot_embedding(y.data.cpu(), self.num_classes)  # [N,2]
+        x = x[:,1:]
         t = t[:,1:]  # exclude background
         t = Variable(t).cuda()  # [N,2]
 
