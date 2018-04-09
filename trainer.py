@@ -49,7 +49,7 @@ class Trainer(object):
 
     def save_checkpoint(self, path):
         checkpoint = {
-                'epoch': self.epoch,
+                'epoch': self.epoch + 1,
                 'state_dict': self.model.state_dict(),
                 'optimizer': self.optim.state_dict()
         }
@@ -74,6 +74,10 @@ class Trainer(object):
         epochs = []
         for path in paths:
             epochs.append(int(path.split('/')[-1].replace('.npy','')))
+
+        if len(epochs) == 0:
+            raise RuntimeError('no checkpoints available')
+
         epochs.sort()
         latest = epochs[-1]
         return os.path.join(self.log_dir, '%d.npy' % latest)
@@ -101,7 +105,7 @@ class Trainer(object):
 
             samples_seen = 0
 
-            pbar = tqdm(total=total_size, leave=True, unit='batches')
+            pbar = tqdm(total=total_size, leave=True, unit='b')
             for batch_idx, (imgs, masks, boxes, classes, _) in enumerate(train_loader):
                 batch_size = imgs.shape[0]
 
