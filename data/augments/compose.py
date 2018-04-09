@@ -15,16 +15,16 @@ class Compose(object):
         self.augmenters = Sequential(augmenters)
 
 
-    def __call__(self, img, masks=None, boxes=None):
+    def __call__(self, img, masks=None, classes=None, boxes=None):
         if masks is not None:
-            returns = self.augment(img, masks, boxes)
+            returns = self.augment(img, masks, classes, boxes)
             while returns[1].shape[-1] == 0:
-                returns = self.augment(img, masks, boxes)
+                returns = self.augment(img, masks, classes, boxes)
             return returns
         return self.augmenters.augment_image(img)
 
 
-    def augment(self, img, masks=None, boxes=None):
+    def augment(self, img, masks=None, classes=None, boxes=None):
         returns = []
         aug_det = self.augmenters.to_deterministic()
 
@@ -38,6 +38,11 @@ class Compose(object):
         null_masks = new_masks.sum(axis=0).sum(axis=0) == 0
         new_masks = new_masks[:,:,~null_masks]
         returns.append(new_masks)
+
+        # if removed any mask, remove corresponding class
+        if classes is not None:
+            classes = classes[~null_masks]
+            returns.append(classes)
 
         if boxes is not None:
             # augment boxes

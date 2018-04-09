@@ -27,7 +27,7 @@ class NucleiDataset(Dataset):
             classes = self._generate_classes(masks)
 
             if self.augment is not None:
-                img, masks = self.augment(img, masks)
+                img, masks, classes = self.augment(img, masks, classes)
 
             boxes = self._generate_boxes(masks)
 
