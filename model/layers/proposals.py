@@ -16,6 +16,7 @@ class Proposals(Anchors):
     def forward(self, cls_preds:Variable, box_preds:Variable, input_size:torch.Size):
         CLS_THRESH = 0.6
         NMS_THRESH = 0.7
+        pre_nms = 1000
         max_instances = self.max_instances
         cls_probs = self.softmax(cls_preds).data
         box_preds = box_preds.data
@@ -30,13 +31,18 @@ class Proposals(Anchors):
         for b in range(batch_size):
             ids = scores[b,:] > CLS_THRESH
             ids = ids.nonzero().squeeze()
+            if len(ids) > pre_nms:
+                ids = ids[:pre_nms]
             keep = box_nms(boxes[b][ids], scores[b][ids], threshold=NMS_THRESH).type(dtype).long()
             keep_ids = ids[keep]
             # put positive rois first
             _, order = classes[b][keep_ids].sort(descending=True)
+            if len(order) > max_instances:
+                order = order[:max_instances]
+            # preserve box location order
+            order, _ = order.sort()
             keep_ids = keep_ids[order]
-            if len(keep_ids) > max_instances:
-                keep_ids = keep_ids[:max_instances]
+
             box_results[b][:len(keep_ids),:] = boxes[b][keep_ids]
             class_results[b][:len(keep_ids)] = classes[b][keep_ids]
             score_results[b][:len(keep_ids)] = scores[b][keep_ids]

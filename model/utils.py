@@ -188,6 +188,9 @@ def box_nms(bboxes, scores, threshold=0.5, mode='union'):
             break
         order = order[ids+1]
 
+    # preserve box order
+    keep.sort()
+
     return torch.LongTensor(keep)
 
 def one_hot_embedding(labels, num_classes):
