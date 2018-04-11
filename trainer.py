@@ -2,7 +2,6 @@ import os
 import torch
 import torch.nn.functional as F
 import numpy as np
-import pdb
 from collections import OrderedDict
 from glob import glob
 from tqdm import tqdm
@@ -186,6 +185,9 @@ class Trainer(object):
         return box_prec, mask_prec
 
     def evaluate_box_precision(self, cls_preds, classes, box_preds, boxes, input_size):
+        # to avoid accounting bg proposals, use an iou mask
+        mask_iou = cls_preds.data.byte().unsqueeze(2)
+
         ious = box_iou(box_preds.data, boxes.data, order='xyxy')
         num_pred = (cls_preds.data > 0).sum(dim=1).float()
         num_true = (classes.data > 0).sum(dim=1).float()
@@ -194,7 +196,7 @@ class Trainer(object):
         # in case of multiple detection for the same object, one detection is considered
         # as true positive, the others are false detections.
         for t in thresholds:
-            tp = (ious > t).sum(dim=1).clamp(max=1).sum(dim=1).float()
+            tp = ((ious > t) & mask_iou).sum(dim=1).clamp(max=1).sum(dim=1).float()
             fp = num_pred - tp
             fn = num_true - tp
             p += tp / (tp + fp + fn)

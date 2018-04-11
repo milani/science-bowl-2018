@@ -15,7 +15,7 @@ def meshgrid(x, y, row_major=True):
     yy = b.view(-1,1).repeat(1,x).view(-1,1)
     return torch.cat([xx,yy],1) if row_major else torch.cat([yy,xx],1)
 
-def place_masks(masks, boxes, input_size):
+def place_masks(masks, boxes, classes, input_size):
     masks = masks.data.sigmoid()
     boxes = boxes.data.round().long()
     in_height, in_width = input_size
@@ -25,7 +25,7 @@ def place_masks(masks, boxes, input_size):
     boxes[:,:,3].clamp_(max=in_height -1)
 
     output = []
-    for bmask, bbox in zip(masks, boxes):
+    for bmask, bbox, bclasses in zip(masks, boxes, classes):
         rmask = []
         for i, box in enumerate(bbox):
             mask = bmask[i]
@@ -34,7 +34,7 @@ def place_masks(masks, boxes, input_size):
             x1, y1, x2, y2 = box
             height, width = y2 - y1 + 1, x2 - x1 + 1
 
-            if height > 1 and width > 1:
+            if int(bclasses[i]) > 0 and height > 1 and width > 1:
                 scaled_mask = torch.Tensor(resize(mask,(height,width),mode='constant'))
                 resized_mask[y1:(y2+1), x1:(x2+1)] = scaled_mask > 0.5
 
