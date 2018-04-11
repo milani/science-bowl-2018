@@ -18,6 +18,8 @@ class MaskLoss(nn.Module):
         positive_idx = scores > 0
         positive_idx = positive_idx.unsqueeze(1).unsqueeze(1) # broadcastable
         masks = torch.masked_select(masks, positive_idx)
+        masks[masks >= 0.5] = 1
+        masks[masks < 0.5] = 0
 
         pad_size = num_masks - mask_preds.shape[1]
         mask_preds = F.pad(mask_preds, (0,0,0,0,0,pad_size))
