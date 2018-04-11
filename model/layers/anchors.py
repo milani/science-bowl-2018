@@ -58,12 +58,23 @@ class Anchors(nn.Module):
 
         boxes = change_box_order(boxes, 'xyxy2xywh')
         ious = box_iou(anchor_boxes, boxes, order='xywh')
+
         max_ious, max_ids = ious.max(2)
-        boxes = torch.stack([boxes[b][max_ids[b,:]] for b in range(boxes.shape[0])])
+        # To add anchors with maximum overlap with boxes
+        gt_max_ious, gt_max_ids = ious.max(1)
+
+        # only if torch had argmax....
+        gt_length = labels.long().sum(1)
+        for b in range(batch_size):
+            max_ids[b][gt_max_ids[b,:gt_length[b]]] = max_ids.new(list(range(gt_length[b])))
+            max_ious[b][gt_max_ids[b,:gt_length[b]]] = 1. # to avoid removing them later when thresholding
+
+        boxes = torch.stack([boxes[b][max_ids[b,:]] for b in range(batch_size)])
 
         loc_xy = (boxes[:,:,:2]-anchor_boxes[:,:,:2]) / anchor_boxes[:,:,2:]
         loc_wh = torch.log(boxes[:,:,2:]/anchor_boxes[:,:,2:])
         loc_targets = torch.cat([loc_xy,loc_wh], 2)
+
         cls_targets = torch.stack([labels[b][max_ids[b,:]] for b in range(labels.shape[0])])
         cls_targets[max_ious<0.5] = 0
         ignore = (max_ious>0.4) & (max_ious<0.5)
