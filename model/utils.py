@@ -185,9 +185,9 @@ def box_nms(bboxes, scores, threshold=0.5, mode='union'):
 
 
         # avoid box-in-box
-        bib = ((1 - inter/areas[order[1:]]) < 0.1)
-
-        ids = ((ovr<=threshold) & (1-bib) ).nonzero().squeeze()
+        #bib = (inter/areas[order[1:]]) > 0.9)
+        #ids = ((ovr<=threshold) & ~bib ).nonzero().squeeze()
+        ids = (ovr<=threshold).nonzero().squeeze()
 
         if ids.numel() == 0:
             break
