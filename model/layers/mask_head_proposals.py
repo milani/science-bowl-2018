@@ -25,6 +25,7 @@ class MaskHeadProposals(nn.Module):
 
         for b in range(batch_size):
             keep = box_nms(box_proposals[b], proposal_scores[b], threshold=self.nms_thr).type(dtype).long()
+            keep.sort()
             keep = keep[:self.max_instances]
 
             pad_size = self.max_instances - len(keep)

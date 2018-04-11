@@ -9,7 +9,7 @@ from .layers.proposals import Proposals
 from .layers.mask_head_proposals import MaskHeadProposals
 from .layers.roi import Roi
 from .layers.loss import FocalLoss, MaskLoss
-from .utils import crop_masks, place_masks, box_nms
+from .utils import crop_masks, place_masks
 
 class RetinaNet(nn.Module):
     def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320, pooling_size=14):
