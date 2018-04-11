@@ -14,6 +14,10 @@ class MaskHeadProposals(nn.Module):
         batch_size, num_boxes = gt_boxes.shape[:2]
         gt_scores = gt_classes
 
+        # let's use only background proposals
+        pos_mask = (cls_proposals > 0)
+        proposal_scores[pos_mask] = 0
+
         cls_proposals = torch.cat([gt_classes.data, cls_proposals.data], dim=1)
         box_proposals = torch.cat([gt_boxes.data, box_proposals.data], dim=1)
         proposal_scores = torch.cat([gt_scores.data, proposal_scores.data], dim=1)
@@ -21,11 +25,13 @@ class MaskHeadProposals(nn.Module):
         new_classes = []
         new_boxes = []
         new_scores = []
-
         for b in range(batch_size):
+            gt_len = int(gt_classes[b].sum())
             keep = box_nms(box_proposals[b], proposal_scores[b], threshold=self.nms_thr)
             keep, _ = keep.sort()
             keep = keep[:self.max_instances]
+            # make sure ground-truthes are kept
+            keep[:gt_len] = keep.new(list(range(gt_len)))
 
             pad_size = self.max_instances - len(keep)
             tmp_classes = self._pad(cls_proposals[b][keep], (0, pad_size))
