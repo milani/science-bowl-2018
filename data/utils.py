@@ -1,5 +1,5 @@
+import torch
 import torchvision.transforms.functional as F
-from torch import from_numpy
 
 class ToTensor(object):
     """Converts a ``numpy.ndarray`` to tensor.
@@ -16,6 +16,14 @@ class ToTensor(object):
             Tensor: converted numpy.ndarray
         """
         if array.ndim == 3:
-            return F.to_tensor(array)
+            return self.to_tensor(array)
         else:
-            return from_numpy(array).float()
+            return torch.from_numpy(array).float()
+
+    def to_tensor(self, img):
+        img = torch.from_numpy(img.transpose((2, 0, 1)))
+
+        if isinstance(img, torch.ByteTensor) and float(img.max()) > 1:
+            return img.float().div(255)
+
+        return img.float()
