@@ -21,7 +21,6 @@ class Proposals(Anchors):
         cls_probs = self.softmax(cls_preds).data
         box_preds = box_preds.data
         cls_preds = cls_preds.data
-        dtype = cls_preds.type()
         batch_size = cls_preds.shape[0]
         scores, classes, boxes = self.deanchorize(cls_probs, box_preds, input_size)
 
@@ -33,8 +32,8 @@ class Proposals(Anchors):
             sorted_scores, sorted_idx  = scores[b,:].sort()
             ids = sorted_idx[sorted_scores > CLS_THRESH]
             ids = ids[:pre_nms]
-            keep = box_nms(boxes[b][ids], scores[b][ids], threshold=NMS_THRESH).type(dtype).long()
-            keep.sort()
+            keep = box_nms(boxes[b][ids], scores[b][ids], threshold=NMS_THRESH)
+            keep, _ = keep.sort()
             keep_ids = ids[keep[:max_instances]]
 
             box_results[b][:len(keep_ids),:] = boxes[b][keep_ids]

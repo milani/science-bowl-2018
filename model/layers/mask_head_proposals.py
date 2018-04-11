@@ -11,7 +11,6 @@ class MaskHeadProposals(nn.Module):
         self.max_instances = max_instances
 
     def forward(self, cls_proposals, gt_classes, box_proposals, gt_boxes, proposal_scores):
-        dtype = gt_classes.data.type()
         batch_size, num_boxes = gt_boxes.shape[:2]
         gt_scores = gt_classes
 
@@ -24,8 +23,8 @@ class MaskHeadProposals(nn.Module):
         new_scores = []
 
         for b in range(batch_size):
-            keep = box_nms(box_proposals[b], proposal_scores[b], threshold=self.nms_thr).type(dtype).long()
-            keep.sort()
+            keep = box_nms(box_proposals[b], proposal_scores[b], threshold=self.nms_thr)
+            keep, _ = keep.sort()
             keep = keep[:self.max_instances]
 
             pad_size = self.max_instances - len(keep)
