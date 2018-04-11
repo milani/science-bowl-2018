@@ -37,8 +37,7 @@ class Proposals(Anchors):
             keep_ids = ids[keep]
             # put positive rois first
             _, order = classes[b][keep_ids].sort(descending=True)
-            if len(order) > max_instances:
-                order = order[:max_instances]
+            order = order[:max_instances]
             # preserve box location order
             order, _ = order.sort()
             keep_ids = keep_ids[order]

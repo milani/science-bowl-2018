@@ -150,13 +150,18 @@ def box_nms(bboxes, scores, threshold=0.5, mode='union'):
     y2 = bboxes[:,3]
 
     areas = (x2-x1) * (y2-y1)
-    scores[areas <= 0] = 0.
     _, order = scores.sort(0, descending=True)
 
     keep = []
 
     while order.numel() > 0:
         i = order[0]
+
+        # Avoid inserting an empty box in the list.
+        # it happens when the last boxes are zero due to padding
+        if scores[i] == 0:
+            break
+
         keep.append(i)
 
         if order.numel() == 1:

@@ -3,28 +3,31 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
-from model.fpn import fpn50
-from model.layers.groupnorm import GroupNorm2d
-from model.layers.proposals import Proposals
-from model.layers.roi import Roi
-from model.layers.loss import FocalLoss
-from model.utils import crop_masks, place_masks
+from .fpn import fpn50
+from .layers.groupnorm import GroupNorm2d
+from .layers.proposals import Proposals
+from .layers.mask_head_proposals import MaskHeadProposals
+from .layers.roi import Roi
+from .layers.loss import FocalLoss, MaskLoss
+from .utils import crop_masks, place_masks, box_nms
 
 class RetinaNet(nn.Module):
-    def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320, pooling_size=21):
+    def __init__(self, fpn_factory=fpn50, num_classes=1, num_anchors=9, max_instances = 320, pooling_size=14):
         super(RetinaNet, self).__init__()
         self.pooling_size = pooling_size
         self.predicting = False
         self.max_instances = max_instances
         self.fpn = fpn_factory()
         self.proposals = Proposals(max_instances=max_instances)
+        self.mask_head_proposals = MaskHeadProposals(max_instances=max_instances)
         self.roi = Roi(max_instances=max_instances,pooling_size=pooling_size)
         self.num_classes = num_classes + 1 # including background
         self.num_anchors = num_anchors
         self.cls_head = self._build_head(num_anchors * self.num_classes)
         self.box_head = self._build_head(num_anchors * 4)
         self.mask_head = self._build_mask_head()
-        self.loss = FocalLoss(self.num_classes)
+        self.detection_loss = FocalLoss(self.num_classes)
+        self.mask_loss = MaskLoss()
 
         self._init_cls_head(self.cls_head)
         self._init_head(self.box_head)
@@ -41,13 +44,11 @@ class RetinaNet(nn.Module):
 
 
     def freeze_mask(self):
-        self.loss.include_mask = False
         for param in self.mask_head.parameters():
             param.requires_grad = False
 
 
     def unfreeze_mask(self):
-        self.loss.include_mask = True
         for param in self.mask_head.parameters():
             param.requires_grad = True
 
@@ -72,17 +73,15 @@ class RetinaNet(nn.Module):
         cls_preds = torch.cat(cls_preds,1)
         box_preds = torch.cat(box_preds,1)
 
+        if not self.predicting:
+            cls_loss, box_loss = self.detection_loss(cls_preds, classes, box_preds, boxes, input_size)
+
         cls_proposals, box_proposals, scores = self.proposals(cls_preds, box_preds, input_size)
 
-        # TODO use a better approach for mixing ground truth boxes
-        if not self.predicting:
-            last_index = min(int(cls_proposals.sum(dim=1).max()), self.max_instances - 1)
-            for i in range(masks.shape[0]):
-                scores[i,last_index] = 1
-                cls_proposals[i,last_index] = 1
-                box_proposals[i,last_index,:] = boxes.data[i,0,:]
+        if self.training:
+            cls_proposals, box_proposals, scores = self.mask_head_proposals(cls_proposals, classes, box_proposals, boxes, scores)
 
-        roi_feature_maps = self.roi(feature_maps[0], box_proposals, scores, input_size)
+        roi_feature_maps = self.roi(feature_maps[0], box_proposals, input_size)
         mask_preds = []
         for fm in roi_feature_maps:
             mask_pred = self.mask_head(fm)
@@ -95,14 +94,20 @@ class RetinaNet(nn.Module):
             mask_preds = place_masks(mask_preds, box_proposals, input_size)
             return cls_proposals, box_proposals, mask_preds
 
-        masks = crop_masks(masks, boxes, pooling_size=self.pooling_size)
-
-        losses = self.loss(cls_preds, classes, box_preds, boxes, mask_preds, masks, input_size)
-        cls_loss, box_loss, mask_loss, total_loss = losses
-
+        masks = self._prepare_gt_masks(masks, box_proposals)
+        mask_loss = self.mask_loss(mask_preds, masks, scores)
         mask_preds = place_masks(mask_preds, box_proposals, input_size)
 
+        total_loss = cls_loss + box_loss + mask_loss
+
         return cls_proposals, box_proposals, mask_preds, cls_loss, box_loss, mask_loss, total_loss
+
+
+    def _prepare_gt_masks(self, masks, boxes):
+        num_masks = masks.shape[1]
+        masks = crop_masks(masks, boxes[:,:num_masks], pooling_size=self.pooling_size)
+        pad_size = self.max_instances - masks.shape[1]
+        return F.pad(masks, (0,0,0,0,0,pad_size))
 
 
     def _build_head(self, num_planes):

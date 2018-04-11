@@ -5,11 +5,31 @@ from torch.autograd import Variable
 from model.utils import one_hot_embedding
 from model.layers.anchors import Anchors
 
+
+class MaskLoss(nn.Module):
+    def __init__(self):
+        super(MaskLoss, self).__init__()
+
+
+    def forward(self, mask_preds, masks, scores):
+        num_masks, mask_height, mask_width = masks.shape[1:]
+        scores = scores.view(1, -1).squeeze(0)
+        masks = masks.view(1, -1, mask_height, mask_width).squeeze(0)
+        positive_idx = scores > 0
+        positive_idx = positive_idx.unsqueeze(1).unsqueeze(1) # broadcastable
+        masks = torch.masked_select(masks, positive_idx)
+
+        pad_size = num_masks - mask_preds.shape[1]
+        mask_preds = F.pad(mask_preds, (0,0,0,0,0,pad_size))
+        mask_preds = mask_preds.view(1, -1, mask_height, mask_width)
+        mask_preds = torch.masked_select(mask_preds, positive_idx)
+        return F.binary_cross_entropy_with_logits(mask_preds, masks, size_average=False) / positive_idx.float().sum()
+
+
 class FocalLoss(nn.Module):
     def __init__(self, num_classes=2):
         super(FocalLoss, self).__init__()
         self.num_classes = num_classes
-        self.include_mask = True
         self.anchorize = Anchors()
 
 
@@ -30,28 +50,7 @@ class FocalLoss(nn.Module):
         return res
 
 
-    def mask_loss(self, classes, mask_preds, masks):
-        if self.include_mask:
-            num_masks, mask_height, mask_width = masks.shape[1:]
-            classes = classes.view(1, -1).squeeze(0)
-            masks = masks.view(1, -1, mask_height, mask_width).squeeze(0)
-            positive_idx = classes > 0
-            positive_idx = positive_idx.unsqueeze(1).unsqueeze(1) # broadcastable
-            masks = torch.masked_select(masks, positive_idx)
-
-            pad_size = num_masks - mask_preds.shape[1]
-            mask_preds = F.pad(mask_preds, (0,0,0,0,0,pad_size))
-            mask_preds = mask_preds.view(1, -1, mask_height, mask_width)
-            mask_preds = torch.masked_select(mask_preds, positive_idx)
-            return F.binary_cross_entropy_with_logits(mask_preds, masks, size_average=False) / positive_idx.float().sum()
-
-
-        return Variable(box_loss.data.new(1).fill_(0))
-
-
-    def forward(self, cls_preds, cls_targets, box_preds, box_targets, mask_preds, mask_targets, input_size):
-        mask_loss = self.mask_loss(cls_targets, mask_preds, mask_targets)
-
+    def forward(self, cls_preds, cls_targets, box_preds, box_targets, input_size):
         cls_targets, box_targets = self.anchorize(cls_targets, box_targets, input_size)
         batch_size, num_boxes = cls_targets.size()
         pos = cls_targets > 0
@@ -68,6 +67,5 @@ class FocalLoss(nn.Module):
         mask = pos_neg.unsqueeze(2).expand_as(cls_preds)
         masked_cls_preds = cls_preds[mask].view(-1,self.num_classes)
         cls_loss = self.focal_loss(masked_cls_preds, cls_targets[pos_neg])
-        avg_loss = box_loss + cls_loss + mask_loss
-        return cls_loss, box_loss, mask_loss, avg_loss
+        return cls_loss, box_loss
 
