@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.autograd import Variable
 from skimage.transform import resize
+from lib.nms.pth_nms import pth_nms
 
 def meshgrid(x, y, row_major=True):
     a = torch.arange(0,x)
@@ -26,13 +27,11 @@ def place_masks(masks, boxes, input_size):
     output = []
     for bmask, bbox in zip(masks, boxes):
         rmask = []
-        for i, mask in enumerate(bmask):
+        for i, box in enumerate(bbox):
+            mask = bmask[i]
             resized_mask = masks.new(in_height,in_width).fill_(0)
 
-            x1 = bbox[i,0]
-            y1 = bbox[i,1]
-            x2 = bbox[i,2]
-            y2 = bbox[i,3]
+            x1, y1, x2, y2 = box
             height, width = y2 - y1 + 1, x2 - x1 + 1
 
             if height > 1 and width > 1:
@@ -144,59 +143,8 @@ def box_iou(box1, box2, order='xyxy'):
     return iou
 
 def box_nms(bboxes, scores, threshold=0.5, mode='union'):
-    x1 = bboxes[:,0]
-    y1 = bboxes[:,1]
-    x2 = bboxes[:,2]
-    y2 = bboxes[:,3]
-
-    areas = (x2-x1) * (y2-y1)
-    _, order = scores.sort(0, descending=True)
-
-    keep = []
-
-    while order.numel() > 0:
-        i = order[0]
-
-        # Avoid inserting an empty box in the list.
-        # it happens when the last boxes are zero due to padding
-        if scores[i] == 0:
-            break
-
-        keep.append(i)
-
-        if order.numel() == 1:
-            break
-
-        xx1 = x1[order[1:]].clamp(min=x1[i])
-        yy1 = y1[order[1:]].clamp(min=y1[i])
-        xx2 = x2[order[1:]].clamp(max=x2[i])
-        yy2 = y2[order[1:]].clamp(max=y2[i])
-
-        w = (xx2-xx1).clamp(min=0)
-        h = (yy2-yy1).clamp(min=0)
-        inter = w*h
-
-        if mode == 'union':
-            ovr = inter / (areas[i] + areas[order[1:]] - inter)
-        elif mode == 'min':
-            ovr = inter / areas[order[1:]].clamp(max=areas[i])
-        else:
-            raise TypeError('Unknown nms mode: %s.' % mode)
-
-
-        # avoid box-in-box
-        #bib = (inter/areas[order[1:]]) > 0.9)
-        #ids = ((ovr<=threshold) & ~bib ).nonzero().squeeze()
-        ids = (ovr<=threshold).nonzero().squeeze()
-
-        if ids.numel() == 0:
-            break
-        order = order[ids+1]
-
-    # preserve box order
-    keep.sort()
-
-    return torch.LongTensor(keep)
+    dets = torch.cat([bboxes, scores.unsqueeze(1)], dim=1)
+    return pth_nms(dets, threshold)
 
 def one_hot_embedding(labels, num_classes):
     '''Embedding labels to one-hot form.
