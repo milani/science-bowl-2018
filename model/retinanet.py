@@ -91,12 +91,12 @@ class RetinaNet(nn.Module):
         mask_preds = torch.cat(mask_preds,0)
 
         if self.predicting:
-            mask_preds = place_masks(mask_preds, box_proposals, input_size)
+            mask_preds = place_masks(mask_preds, box_proposals, cls_proposals, input_size)
             return cls_proposals, box_proposals, mask_preds
 
         masks = self._prepare_gt_masks(masks, box_proposals)
         mask_loss = self.mask_loss(mask_preds, masks, scores)
-        mask_preds = place_masks(mask_preds, box_proposals, input_size)
+        mask_preds = place_masks(mask_preds, box_proposals, cls_proposals, input_size)
 
         total_loss = cls_loss + box_loss + mask_loss
 

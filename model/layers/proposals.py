@@ -14,27 +14,27 @@ class Proposals(Anchors):
 
 
     def forward(self, cls_preds:Variable, box_preds:Variable, input_size:torch.Size):
-        CLS_THRESH = 0.6
-        NMS_THRESH = 0.8
+        NMS_THRESH = 0.6
         pre_nms = 6000
         max_instances = self.max_instances
-        cls_probs = self.softmax(cls_preds).data
+        cls_probs = cls_preds.sigmoid().data
         box_preds = box_preds.data
         cls_preds = cls_preds.data
         batch_size = cls_preds.shape[0]
         scores, classes, boxes = self.deanchorize(cls_probs, box_preds, input_size)
+        # force topk to keep positive classes for nms
+        scores[classes == 1] = 1.
 
         box_results = box_preds.new(batch_size, max_instances, 4).fill_(0)
         class_results = box_preds.new(batch_size, max_instances).fill_(0)
         score_results = box_preds.new(batch_size, max_instances).fill_(0)
 
         for b in range(batch_size):
-            sorted_scores, sorted_idx  = scores[b,:].sort()
-            ids = sorted_idx[sorted_scores > CLS_THRESH]
-            ids = ids[:pre_nms]
+            _, ids = torch.topk(scores[b], pre_nms)
             keep = box_nms(boxes[b][ids], scores[b][ids], threshold=NMS_THRESH)
+            keep = keep[:max_instances]
             keep, _ = keep.sort()
-            keep_ids = ids[keep[:max_instances]]
+            keep_ids = ids[keep]
 
             box_results[b][:len(keep_ids),:] = boxes[b][keep_ids]
             class_results[b][:len(keep_ids)] = classes[b][keep_ids]
